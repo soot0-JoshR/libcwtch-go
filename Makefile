@@ -1,3 +1,5 @@
+IOS_OUT := ./ios
+
 .PHONY: all linux android windows clean
 
 DEFAULT_GOAL: linux
@@ -24,3 +26,20 @@ libCwtch.dll: lib.go
 
 clean: 
 	rm -f cwtch.aar cwtch_go.apk libCwtch.h libCwtch.so cwtch-sources.jar libCwtch.dll
+
+ios-arm64:
+	CGO_ENABLED=1 \
+	GOOS=darwin \
+	GOARCH=arm64 \
+	CGO_CFLAGS="-fembed-bitcode" \
+	go build -buildmode=c-archive -tags ios -o $(IOS_OUT)/arm64.a .
+
+ios-x86_64:
+	CGO_ENABLED=1 \
+	GOOS=darwin \
+	GOARCH=amd64 \
+	go build -buildmode=c-archive -tags ios -o $(IOS_OUT)/x86_64.a .
+
+ios: ios-arm64 ios-x86_64
+	lipo $(IOS_OUT)/x86_64.a $(IOS_OUT)/arm64.a -create -output $(IOS_OUT)/cwtch.a
+	cp $(IOS_OUT)/arm64.h $(IOS_OUT)/cwtch.h
