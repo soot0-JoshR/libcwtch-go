@@ -31,13 +31,17 @@ ios-arm64:
 	CGO_ENABLED=1 \
 	GOOS=darwin \
 	GOARCH=arm64 \
+	SDK=iphoneos \
 	CGO_CFLAGS="-fembed-bitcode" \
+	CC=$(PWD)/clangwrap.sh \
 	go build -buildmode=c-archive -tags ios -o $(IOS_OUT)/arm64.a .
 
 ios-x86_64:
 	CGO_ENABLED=1 \
 	GOOS=darwin \
 	GOARCH=amd64 \
+	SDK=iphonesimulator \
+	CC=$(PWD)/clangwrap.sh \
 	go build -buildmode=c-archive -tags ios -o $(IOS_OUT)/x86_64.a .
 
 ios: ios-arm64 ios-x86_64
