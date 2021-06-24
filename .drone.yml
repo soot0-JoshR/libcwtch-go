@@ -1,0 +1,137 @@
+---
+kind: pipeline
+type: docker
+name: default
+
+steps:
+  - name: fetch
+    image: golang
+    volumes:
+      - name: deps
+        path: /go
+    commands:
+      - wget https://git.openprivacy.ca/openprivacy/buildfiles/raw/master/tor/tor
+      - wget https://git.openprivacy.ca/openprivacy/buildfiles/raw/master/tor/torrc
+      - chmod a+x tor
+      - go get -u golang.org/x/lint/golint
+      - git fetch --tags
+      #- export GO111MODULE=on
+      #- go mod vendor
+      - go get
+      # TODO: upgrade to go1.16, remove mod/vendor, add go install for 1.16
+      - echo `git describe --tags` > VERSION
+      - echo `date +%G-%m-%d-%H-%M` > BUILDDATE
+
+  - name: quality
+    image: golang
+    volumes:
+      - name: deps
+        path: /go
+    commands:
+      - go list ./... | xargs go vet
+      - go list ./... | xargs golint 
+        #Todo: fix all the lint errors and add `-set_exit_status` above to enforce linting
+
+  - name: build-linux
+    image: golang
+    volumes:
+      - name: deps
+        path: /go
+    commands:
+      - make linux
+
+  - name: build-android
+    image: openpriv/android-go-mobile:2021.03
+    volumes:
+      - name: deps
+        path: /go
+    commands:
+      - go mod download
+      - gomobile init
+      - make android
+
+  - name: build-windows
+    image: openpriv/mingw-go:2021.03
+    environment:
+      GOPATH: /go
+    volumes:
+      - name: deps
+        path: /go
+    commands:
+      - make windows
+
+  - name: deploy-buildfiles
+    image: kroniak/ssh-client
+    environment:
+      BUILDFILES_KEY:
+        from_secret: buildfiles_key
+    secrets: [gogs_account_token]
+    when:
+      event:
+        - push
+        - tag
+      status: [ success ]
+    commands:
+     - echo $BUILDFILES_KEY > ~/id_rsab64
+     - base64 -d ~/id_rsab64 > ~/id_rsa
+     - chmod 400 ~/id_rsa
+     - export DIR=libCwtch-go-`cat VERSION`-`cat BUILDDATE`
+     - mkdir $DIR
+     - mv libCwtch.so libCwtch.dll cwtch.aar cwtch-sources.jar libCwtch.h  $DIR/
+     - cd $DIR
+     - find . -type f -exec sha256sum {} \; > ./../sha256s.txt
+     - mv ./../sha256s.txt .
+     - cd ..
+     - scp -r -o StrictHostKeyChecking=no -i ~/id_rsa $DIR buildfiles@openprivacy.ca:/home/buildfiles/buildfiles/
+
+  - name: gitea-release
+    image: plugins/gitea-release
+    when:
+      event: tag
+    settings:
+      api_key:
+        from_secret: gogs_account_token
+      base_url: https://git.openprivacy.ca
+      files:
+        - libCwtch.so
+        - libCwtch.dll
+        - cwtch.aar
+        - cwtch-sources.jar
+        - libCwtch.h
+      checksum:
+        - sha256
+        - sha512
+
+  - name: notify-email
+    image: drillster/drone-email
+    settings:
+      host: build.openprivacy.ca
+      port: 25
+      skip_verify: true
+      from: drone@openprivacy.ca
+    when:
+      status: [ failure ]
+
+  - name: notify-gogs
+    image: openpriv/drone-gogs
+    when:
+      event: pull_request
+      status: [ success, changed, failure ]
+    environment:
+      GOGS_ACCOUNT_TOKEN:
+        from_secret: gogs_account_token
+    settings:
+      gogs_url: https://git.openprivacy.ca
+
+volumes:
+  # gopath where bin and pkg lives to persist across steps
+  - name: deps
+    temp: {}
+
+trigger:
+  repo: flutter/libcwtch-go
+  branch: trunk
+  event:
+    - push
+    - pull_request
+    - tag
