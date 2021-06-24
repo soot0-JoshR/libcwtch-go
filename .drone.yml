@@ -129,7 +129,7 @@ volumes:
     temp: {}
 
 trigger:
-  repo: flutter/libcwtch-go
+  repo: cwtch.im/libcwtch-go
   branch: trunk
   event:
     - push
