@@ -247,7 +247,6 @@ func NewManager(profile string, gcd *GrandCentralDispatcher) Manager {
 //   uiManager.AddContact(onion)
 //   (handle string, displayName string, image string, badge int, status int, authorization string, loading bool, lastMsgTime int)
 func EnrichNewPeer(handle string, ph *PeerHelper, ev *EventProfileEnvelope) error {
-	log.Infof("Enriching New Peer %v", handle)
 	if ph.IsGroup(handle) {
 		group := ph.peer.GetGroup(handle)
 		if group != nil {

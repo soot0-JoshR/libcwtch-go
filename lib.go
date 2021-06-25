@@ -233,7 +233,7 @@ func SendAppEvent(eventJson string) {
 	log.Debugf("Event: %v", new_event.EventType)
 
 	// We need to update the local cache
-	// Ideally I think this would be pusgit hed back into Cwtch
+	// Ideally I think this would be pushed back into Cwtch
 	switch new_event.EventType {
 	case utils.UpdateGlobalSettings:
 		var globalSettings utils.GlobalSettings
