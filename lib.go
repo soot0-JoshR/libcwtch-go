@@ -230,10 +230,10 @@ func SendAppEvent(eventJson string) {
 	// rest of the logic nicer.
 	var new_event event.Event
 	json.Unmarshal([]byte(eventJson), &new_event)
-	log.Infof("Event: %v", new_event)
+	log.Debugf("Event: %v", new_event.EventType)
 
 	// We need to update the local cache
-	// Ideally I think this would be pusgit hed back into Cwtch
+	// Ideally I think this would be pushed back into Cwtch
 	switch new_event.EventType {
 	case utils.UpdateGlobalSettings:
 		var globalSettings utils.GlobalSettings
@@ -347,7 +347,6 @@ func c_GetAppBusEvent() *C.char {
 
 // GetAppBusEvent blocks until an event
 func GetAppBusEvent() string {
-	log.Debugf("appbusevent called")
 	for eventHandler == nil {
 		log.Debugf("waiting for eventHandler != nil")
 		time.Sleep(time.Second)
@@ -355,10 +354,8 @@ func GetAppBusEvent() string {
 
 	var json = ""
 	for json == "" {
-		log.Debugf("waiting for json != ''")
 		json = eventHandler.GetNextEvent()
 	}
-	log.Debugf("appbusevent: %v", json)
 	return json
 }
 

@@ -362,7 +362,7 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 }
 
 func (eh *EventHandler) forwardProfileMessages(onion string, q event.Queue) {
-	log.Infof("Launching Forwarding Goroutine for %v", onion)
+	log.Infof("Launching Forwarding Goroutine")
 	// TODO: graceful shutdown, via an injected event of special QUIT type exiting loop/go routine
 	for {
 		e := q.Next()
