@@ -126,7 +126,7 @@ func _startCwtch(appDir string, torPath string) {
 	acn, err := tor.NewTorACNWithAuth(path.Join(appDir, "/.tor"), torPath, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
 	if err != nil {
 		log.Errorf("\nError connecting to Tor replacing with ErrorACN: %v\n", err)
-		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, err))
+		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
 		return
 	}
 	globalACN = acn
