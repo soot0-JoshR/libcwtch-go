@@ -253,7 +253,7 @@ func EnrichNewPeer(handle string, ph *PeerHelper, ev *EventProfileEnvelope) erro
 			lastRead := ph.InitLastReadTime(group.GroupID)
 			ev.Event.Data["unread"] = strconv.Itoa(ph.CountUnread(group.Timeline.GetMessages(), lastRead))
 			ev.Event.Data["picture"] = ph.GetProfilePic(handle)
-
+			ev.Event.Data["numMessages"] = strconv.Itoa(group.Timeline.Len())
 			ev.Event.Data["nick"] = ph.GetNick(handle)
 			ev.Event.Data["status"] = strconv.Itoa(int(connections.ConnectionStateToType()[group.State]))
 			ev.Event.Data["authorization"] = string(model.AuthApproved)
