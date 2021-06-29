@@ -341,6 +341,7 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.IndexedAcknowledgement, q)
 	eventBus.Subscribe(event.IndexedFailure, q)
 	eventBus.Subscribe(event.NewMessageFromGroup, q)
+	eventBus.Subscribe(event.MessageCounterResync, q)
 	eventBus.Subscribe(event.GroupCreated, q)
 	eventBus.Subscribe(event.NewGroup, q)
 	eventBus.Subscribe(event.AcceptGroupInvite, q)

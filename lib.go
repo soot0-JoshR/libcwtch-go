@@ -1,6 +1,6 @@
-package cwtch
+//package cwtch
 
-//package main
+package main
 
 import "C"
 import (
@@ -738,4 +738,4 @@ func ShutdownCwtch() {
 }
 
 // Leave as is, needed by ffi
-//func main() {}
+func main() {}

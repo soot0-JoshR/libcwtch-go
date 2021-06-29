@@ -255,7 +255,7 @@ func EnrichNewPeer(handle string, ph *PeerHelper, ev *EventProfileEnvelope) erro
 			ev.Event.Data["picture"] = ph.GetProfilePic(handle)
 			ev.Event.Data["numMessages"] = strconv.Itoa(group.Timeline.Len())
 			ev.Event.Data["nick"] = ph.GetNick(handle)
-			ev.Event.Data["status"] = strconv.Itoa(int(connections.ConnectionStateToType()[group.State]))
+			ev.Event.Data["status"] = group.State
 			ev.Event.Data["authorization"] = string(model.AuthApproved)
 			ev.Event.Data["loading"] = "false"
 			ev.Event.Data["lastMsgTime"] = strconv.Itoa(getLastMessageTime(&group.Timeline))
