@@ -3,6 +3,7 @@ package utils
 import (
 	"cwtch.im/cwtch/event"
 	"cwtch.im/cwtch/storage/v1"
+	"sync"
 
 	"encoding/json"
 	"git.openprivacy.ca/openprivacy/log"
@@ -18,6 +19,7 @@ const (
 )
 
 var GlobalSettingsFile v1.FileStore
+var lock sync.Mutex
 
 const GlobalSettingsFilename = "ui.globals"
 const saltFile = "SALT"
@@ -44,11 +46,13 @@ var DefaultGlobalSettings = GlobalSettings{
 	StateRootPane:           0,
 	FirstTime:               true,
 	BlockUnknownConnections: false,
-	UIColumnModePortrait:   "DualpaneMode.Single",
-	UIColumnModeLandscape:    "DualpaneMode.CopyPortrait",
+	UIColumnModePortrait:    "DualpaneMode.Single",
+	UIColumnModeLandscape:   "DualpaneMode.CopyPortrait",
 }
 
 func InitGlobalSettingsFile(directory string, password string) error {
+	lock.Lock()
+	defer lock.Unlock()
 	var key [32]byte
 	salt, err := ioutil.ReadFile(path.Join(directory, saltFile))
 	if err != nil {
@@ -75,6 +79,8 @@ func InitGlobalSettingsFile(directory string, password string) error {
 }
 
 func ReadGlobalSettings() *GlobalSettings {
+	lock.Lock()
+	defer lock.Unlock()
 	settings := DefaultGlobalSettings
 
 	if GlobalSettingsFile == nil {
@@ -100,6 +106,8 @@ func ReadGlobalSettings() *GlobalSettings {
 }
 
 func WriteGlobalSettings(globalSettings GlobalSettings) {
+	lock.Lock()
+	defer lock.Unlock()
 	bytes, _ := json.Marshal(globalSettings)
 	// override first time setting
 	globalSettings.FirstTime = true
