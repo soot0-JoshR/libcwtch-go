@@ -493,36 +493,47 @@ type EnhancedMessage struct {
 }
 
 func GetMessage(profileOnion, handle string, message_index int) string {
-	profile := application.GetPeer(profileOnion)
-	ph := utils.NewPeerHelper(profile)
 	var message EnhancedMessage
-	if ph.IsGroup(handle) {
-		if len(profile.GetGroup(handle).Timeline.Messages) > message_index {
-			message.Message = profile.GetGroup(handle).Timeline.Messages[message_index]
-			message.ContactImage = ph.GetProfilePic(message.Message.PeerID)
-		} else {
-			// Message Index Request exceeded Timeline, most likely reason is this is a request for an
-			// unacknowledged sent message (it can take a many seconds for a message to be confirmed in the worst
-			// case).
-			offset := message_index - len(profile.GetGroup(handle).Timeline.Messages)
-			if len(profile.GetGroup(handle).UnacknowledgedMessages) > offset {
-				message.Message = profile.GetGroup(handle).UnacknowledgedMessages[offset]
+	// There is an edge case that can happen on Android when the app is shutdown while fetching messages...
+	// The worker threads that are spawned can become activated again when the app is opened attempt to finish their job...
+	// In that case we skip processing and just return the empty message...
+	// Note: This is far less likely to happen now that the UI only requests messages *after* syncing has happened and
+	// these requests complete almost immediately v.s. being stalled for seconds to minutes on large groups.
+	if application != nil {
+		profile := application.GetPeer(profileOnion)
+		ph := utils.NewPeerHelper(profile)
+		if ph.IsGroup(handle) {
+			// If we are safely within the limits of the timeline just grab the message at the index..
+			if len(profile.GetGroup(handle).Timeline.Messages) > message_index {
+				message.Message = profile.GetGroup(handle).Timeline.Messages[message_index]
 				message.ContactImage = ph.GetProfilePic(message.Message.PeerID)
 			} else {
-				log.Errorf("Couldn't find message in timeline or unacked messages, probably transient threading issue, but logging for visibility..")
+				// Message Index Request exceeded Timeline, most likely reason is this is a request for an
+				// unacknowledged sent message (it can take a many seconds for a message to be confirmed in the worst
+				// case).
+				offset := message_index - len(profile.GetGroup(handle).Timeline.Messages)
+				if len(profile.GetGroup(handle).UnacknowledgedMessages) > offset {
+					message.Message = profile.GetGroup(handle).UnacknowledgedMessages[offset]
+					message.ContactImage = ph.GetProfilePic(message.Message.PeerID)
+				} else {
+					log.Errorf("Couldn't find message in timeline or unacked messages, probably transient threading issue, but logging for visibility..")
+				}
 			}
-		}
-	} else {
-		if message_index < len(profile.GetContact(handle).Timeline.Messages) {
-			message.Message = profile.GetContact(handle).Timeline.Messages[message_index]
-			message.ContactImage = ph.GetProfilePic(handle)
 		} else {
-			log.Errorf("peerpeercontact getmessage out of range; sending counter resync just in case")
-			eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
-				event.Identity: profileOnion,
-				event.RemotePeer: handle,
-				event.Data: strconv.Itoa(len(profile.GetContact(handle).Timeline.Messages)),
-			}))
+			// If we are safely within the limits of the timeline just grab the message at the index..
+			if len(profile.GetContact(handle).Timeline.Messages) > message_index {
+				message.Message = profile.GetContact(handle).Timeline.Messages[message_index]
+				message.ContactImage = ph.GetProfilePic(handle)
+			} else {
+				// Otherwise Send a counter resync event...this shouldn't really happen for p2p messages so we
+				// throw an error.
+				log.Errorf("peerpeercontact getmessage out of range; sending counter resync just in case")
+				eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
+					event.Identity:   profileOnion,
+					event.RemotePeer: handle,
+					event.Data:       strconv.Itoa(len(profile.GetContact(handle).Timeline.Messages)),
+				}))
+			}
 		}
 	}
 	bytes, _ := json.Marshal(message)
