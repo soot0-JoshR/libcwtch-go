@@ -1,4 +1,4 @@
-.PHONY: all clean linux android
+.PHONY: all linux android windows clean
 
 DEFAULT_GOAL: linux
 
