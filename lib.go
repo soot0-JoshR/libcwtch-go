@@ -70,7 +70,6 @@ func c_StartCwtch(dir_c *C.char, len C.int, tor_c *C.char, torLen C.int) int8 {
 func StartCwtch(appDir string, torPath string) int {
 	log.SetLevel(log.LevelInfo)
 
-
 	log.Infof("StartCwtch(...)")
 	// Quick hack check that we're being called with the correct params
 	// On android a stale worker could be calling us with "last apps" directory. Best to abort fast so the app can make a new worker
@@ -187,34 +186,47 @@ func ReconnectCwtchForeground() {
 		eventHandler.Push(event.NewEvent(event.NewPeer, map[event.Field]string{event.Identity: onion, event.Created: event.False, "Reload": event.True}))
 	}
 
-	for onion := range peerList {
+	settings := utils.ReadGlobalSettings()
+
+	for profileOnion := range peerList {
 		// fix peerpeercontact message counts
-		contactList := application.GetPeer(onion).GetContacts()
+		contactList := application.GetPeer(profileOnion).GetContacts()
 		for _, handle := range contactList {
-			totalMessages := application.GetPeer(onion).GetContact(handle).Timeline.Len() + len(application.GetPeer(onion).GetContact(handle).UnacknowledgedMessages)
+			totalMessages := application.GetPeer(profileOnion).GetContact(handle).Timeline.Len() + len(application.GetPeer(profileOnion).GetContact(handle).UnacknowledgedMessages)
 			eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
-				event.Identity: onion,
+				event.Identity:   profileOnion,
 				event.RemotePeer: handle,
-				event.Data: strconv.Itoa(totalMessages),
+				event.Data:       strconv.Itoa(totalMessages),
 			}))
 		}
-		
-		// fix peergroupcontact message counts
-		groupList := application.GetPeer(onion).GetGroups()
-		for _, groupID := range groupList {
-			totalMessages := application.GetPeer(onion).GetGroup(groupID).Timeline.Len() + len(application.GetPeer(onion).GetGroup(groupID).UnacknowledgedMessages)
-			eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
-				event.Identity: onion,
-				event.GroupID: groupID,
-				event.Data: strconv.Itoa(totalMessages),
-			}))
+
+		// Group Experiment Refresh
+		groupHandler, err := groups.ExperimentGate(settings.Experiments)
+		if err == nil {
+			// fix peergroupcontact message counts
+			groupList := application.GetPeer(profileOnion).GetGroups()
+			for _, groupID := range groupList {
+				totalMessages := application.GetPeer(profileOnion).GetGroup(groupID).Timeline.Len() + len(application.GetPeer(profileOnion).GetGroup(groupID).UnacknowledgedMessages)
+				eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
+					event.Identity: profileOnion,
+					event.GroupID:  groupID,
+					event.Data:     strconv.Itoa(totalMessages),
+				}))
+			}
+
+			serverListForOnion := groupHandler.GetServerInfoList(application.GetPeer(profileOnion))
+			serversListBytes, _ := json.Marshal(serverListForOnion)
+			eventHandler.Push(event.NewEvent(groups.UpdateServerInfo, map[event.Field]string{"ProfileOnion": profileOnion, groups.ServerList: string(serversListBytes)}))
 		}
+
 	}
 
-
+	settingsJson, _ := json.Marshal(settings)
+	application.GetPrimaryBus().Publish(event.NewEvent(utils.UpdateGlobalSettings, map[event.Field]string{event.Data: string(settingsJson)}))
 	application.GetPrimaryBus().Publish(event.NewEvent(utils.CwtchStarted, map[event.Field]string{}))
 	application.QueryACNStatus()
 	application.QueryACNVersion()
+
 }
 
 //export c_SendAppEvent
@@ -539,7 +551,6 @@ func GetMessage(profileOnion, handle string, message_index int) string {
 	bytes, _ := json.Marshal(message)
 	return string(bytes)
 }
-
 
 //export c_SendMessage
 func c_SendMessage(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, msg_ptr *C.char, msg_len C.int) {

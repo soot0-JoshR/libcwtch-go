@@ -83,7 +83,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				eh.startHandlingPeer(onion)
 			}
 
-			tag,isTagged := profile.GetAttribute(app.AttributeTag)
+			tag, isTagged := profile.GetAttribute(app.AttributeTag)
 			if isTagged {
 				e.Data[app.AttributeTag] = tag
 			} else {
@@ -197,10 +197,13 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					authorization = model.AuthApproved
 				}
 
+				// Use the server state when assessing group state
+				state := profile.GetContact(group.GroupServer).State
+
 				contacts = append(contacts, Contact{
 					Name:          ph.GetNick(groupId),
 					Onion:         group.GroupID,
-					Status:        group.State,
+					Status:        state,
 					Picture:       cpicPath,
 					Authorization: string(authorization),
 					SaveHistory:   event.SaveHistoryConfirmed,
