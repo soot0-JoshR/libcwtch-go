@@ -68,7 +68,20 @@ func c_StartCwtch(dir_c *C.char, len C.int, tor_c *C.char, torLen C.int) int8 {
 //     message: CwtchStarted when start up is complete and app is safe to use
 //              CwtchStartError message when start up fails (includes event.Error data field)
 func StartCwtch(appDir string, torPath string) int {
+	if logfile := os.Getenv("LOG_FILE"); logfile != "" {
+		filelog, err := log.NewFile(log.LevelInfo, logfile)
+		filelog.SetUseColor(false)
+		if err == nil {
+			log.SetStd(filelog)
+		} else {
+			// not so likely to be seen since we're usually creating file log in situations we can't access console logs...
+			log.Errorf("could not create file log: %v\n", err)
+		}
+	}
 	log.SetLevel(log.LevelInfo)
+	if logLevel := os.Getenv("LOG_LEVEL"); strings.ToLower(logLevel) == "debug" {
+		log.SetLevel(log.LevelDebug)
+	}
 
 	log.Infof("StartCwtch(...)")
 	// Quick hack check that we're being called with the correct params
