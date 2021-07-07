@@ -565,6 +565,29 @@ func GetMessage(profileOnion, handle string, message_index int) string {
 	return string(bytes)
 }
 
+//export c_GetMessagesByContentHash
+func c_GetMessagesByContentHash(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, contenthash_ptr *C.char, contenthash_len C.int) *C.char {
+	profile := C.GoStringN(profile_ptr, profile_len)
+	handle := C.GoStringN(handle_ptr, handle_len)
+	contentHash := C.GoStringN(contenthash_ptr, contenthash_len)
+	return C.CString(GetMessagesByContentHash(profile, handle, contentHash))
+}
+
+func GetMessagesByContentHash(profileOnion, handle string, contentHash string) string {
+	var indexedMessages []model.LocallyIndexedMessage
+	if application != nil {
+		profile := application.GetPeer(profileOnion)
+		ph := utils.NewPeerHelper(profile)
+		var err error
+		indexedMessages, err = ph.GetTimeline(handle).GetMessagesByHash(contentHash)
+		if err != nil {
+			indexedMessages = []model.LocallyIndexedMessage{}
+		}
+	}
+	bytes, _ := json.Marshal(indexedMessages)
+	return string(bytes)
+}
+
 //export c_SendMessage
 func c_SendMessage(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, msg_ptr *C.char, msg_len C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
