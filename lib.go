@@ -17,6 +17,7 @@ import (
 	"git.openprivacy.ca/flutter/libcwtch-go/features/groups"
 	"git.openprivacy.ca/flutter/libcwtch-go/utils"
 	"git.openprivacy.ca/openprivacy/connectivity"
+	"os/user"
 	"runtime"
 	"strconv"
 	"strings"
@@ -112,8 +113,22 @@ func _startCwtch(appDir string, torPath string) {
 	//(We need a TRACE level)
 	log.ExcludeFromPattern("service.go")
 
+	// Environment variables don't get '~' expansion so if CWTCH_DIR was set, it likely needs manual handling
+	usr, _ := user.Current()
+	homeDir := usr.HomeDir
+	if appDir == "~" {
+		appDir = homeDir
+	} else if strings.HasPrefix(appDir, "~/") {
+		appDir = filepath.Join(homeDir, appDir[2:])
+	}
+
 	// Ensure that the application directory exists...and then initialize settings..
-	os.MkdirAll(path.Join(appDir), 0700)
+	err := os.MkdirAll(appDir, 0700)
+	if err != nil {
+		log.Errorf("Error creating appDir %v: %v\n", appDir, err)
+		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error creating appDir %v: %v", appDir, err)))
+		return
+	}
 	utils.InitGlobalSettingsFile(appDir, constants.DefactoPasswordForUnencryptedProfiles)
 
 	log.Infof("Loading Cwtch Directory %v and tor path: %v", appDir, torPath)
@@ -124,7 +139,7 @@ func _startCwtch(appDir string, torPath string) {
 
 	// generate a random password (actually random, stored in memory, for the control port)
 	key := make([]byte, 64)
-	_, err := rand.Read(key)
+	_, err = rand.Read(key)
 	if err != nil {
 		panic(err)
 	}
@@ -133,11 +148,11 @@ func _startCwtch(appDir string, torPath string) {
 	eventHandler = utils.NewEventHandler()
 
 	log.Infof("making directory %v", appDir)
-	os.MkdirAll(path.Join(appDir, "/.tor", "tor"), 0700)
-	tor.NewTorrc().WithSocksPort(port).WithOnionTrafficOnly().WithControlPort(controlPort).WithHashedPassword(base64.StdEncoding.EncodeToString(key)).Build(filepath.Join(appDir, ".tor", "tor", "torrc"))
-	acn, err := tor.NewTorACNWithAuth(path.Join(appDir, "/.tor"), torPath, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
+	os.MkdirAll(path.Join(appDir, "tor"), 0700)
+	tor.NewTorrc().WithSocksPort(port).WithOnionTrafficOnly().WithControlPort(controlPort).WithHashedPassword(base64.StdEncoding.EncodeToString(key)).Build(filepath.Join(appDir, "tor", "torrc"))
+	acn, err := tor.NewTorACNWithAuth(appDir, torPath, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
 	if err != nil {
-		log.Errorf("\nError connecting to Tor replacing with ErrorACN: %v\n", err)
+		log.Errorf("Error connecting to Tor replacing with ErrorACN: %v\n", err)
 		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
 		return
 	}
