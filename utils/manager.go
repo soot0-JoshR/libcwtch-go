@@ -36,6 +36,20 @@ func (p *PeerHelper) IsServer(id string) bool {
 	return ok
 }
 
+// GetTimeline returns a pointer to the timeline associated with the conversation handle
+func (p *PeerHelper) GetTimeline(handle string) *model.Timeline {
+	if p.IsServer(handle) {
+		// This should *never* happen
+		log.Errorf("server accessed as contact when getting timeline...")
+		return &model.Timeline{}
+	}
+	// We return a pointer to the timeline to avoid copying, accessing Timeline is thread-safe
+	if p.IsGroup(handle) {
+		return &p.peer.GetGroup(handle).Timeline
+	}
+	return &p.peer.GetContact(handle).Timeline
+}
+
 /*
 func getOrDefault(id, key string, defaultVal string) string {
 	var val string

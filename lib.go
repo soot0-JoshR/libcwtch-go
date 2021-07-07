@@ -566,11 +566,7 @@ func GetMessagesByContentHash(profileOnion, handle string, contentHash string) s
 		profile := application.GetPeer(profileOnion)
 		ph := utils.NewPeerHelper(profile)
 		var err error
-		if ph.IsGroup(handle) {
-			indexedMessages,err = profile.GetGroup(handle).Timeline.GetMessagesByHash(contentHash)
-		} else {
-			indexedMessages,err = profile.GetContact(handle).Timeline.GetMessagesByHash(contentHash)
-		}
+		indexedMessages, err = ph.GetTimeline(handle).GetMessagesByHash(contentHash)
 		if err != nil {
 			indexedMessages = []model.LocallyIndexedMessage{}
 		}
