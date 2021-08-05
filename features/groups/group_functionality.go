@@ -6,7 +6,7 @@ import (
 	"cwtch.im/cwtch/peer"
 	"encoding/base64"
 	"fmt"
-	"git.openprivacy.ca/flutter/libcwtch-go/features"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
 	"git.openprivacy.ca/openprivacy/log"
 	"strings"
 )

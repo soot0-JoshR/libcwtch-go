@@ -1,4 +1,4 @@
-module git.openprivacy.ca/flutter/libcwtch-go
+module git.openprivacy.ca/cwtch.im/libcwtch-go
 
 go 1.15
 
