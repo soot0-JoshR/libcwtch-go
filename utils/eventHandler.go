@@ -7,8 +7,8 @@ import (
 	"cwtch.im/cwtch/model/attr"
 	"cwtch.im/cwtch/protocol/connections"
 	"encoding/json"
-	"git.openprivacy.ca/flutter/libcwtch-go/constants"
-	"git.openprivacy.ca/flutter/libcwtch-go/features/groups"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
 	"git.openprivacy.ca/openprivacy/log"
 	"strconv"
 )

@@ -6,7 +6,7 @@ import (
 	"cwtch.im/cwtch/peer"
 	"cwtch.im/cwtch/protocol/connections"
 	"errors"
-	"git.openprivacy.ca/flutter/libcwtch-go/constants"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/openprivacy/log"
 	"strconv"
 	"strings"

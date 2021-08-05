@@ -3,7 +3,7 @@ package contact
 import (
 	"cwtch.im/cwtch/model"
 	"cwtch.im/cwtch/peer"
-	"git.openprivacy.ca/flutter/libcwtch-go/features"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
 	"git.openprivacy.ca/openprivacy/connectivity/tor"
 )
 

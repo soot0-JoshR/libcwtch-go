@@ -2,7 +2,7 @@ package contact
 
 import (
 	"cwtch.im/cwtch/model"
-	"git.openprivacy.ca/flutter/libcwtch-go/features"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
 	"testing"
 )
 
