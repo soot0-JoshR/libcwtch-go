@@ -1,6 +1,6 @@
 IOS_OUT := ./ios
 
-.PHONY: all linux android windows clean
+.PHONY: all linux android windows clean ios
 
 DEFAULT_GOAL: linux
 
@@ -26,6 +26,8 @@ libCwtch.dll: lib.go
 
 clean: 
 	rm -f cwtch.aar cwtch_go.apk libCwtch.h libCwtch.so cwtch-sources.jar libCwtch.dll
+
+# iOS - for testing purposes only for now, not officially supported
 
 ios-arm64:
 	CGO_ENABLED=1 \

@@ -2,9 +2,13 @@
 
 C-bindings for the Go Cwtch Library.
 
-# Build Instructions...
+# Build Instructions
     make linux
     make android
+    make windows
+
+## Experimental iOS support
+    make ios
 
 # Using
 
@@ -16,3 +20,7 @@ C-bindings for the Go Cwtch Library.
 ## Android
 
 - copy `cwtch.aar` into `flutter_app/android/cwtch`
+
+## Windows
+
+- copy libCwtch.dll into the directory of the `.exe` using it
