@@ -1,12 +1,14 @@
 IOS_OUT := ./ios
 
-.PHONY: all linux android windows clean ios
+.PHONY: all linux android windows macos clean ios
 
 DEFAULT_GOAL: linux
 
-all: linux android
+all: linux android windows
 
 linux: libCwtch.so
+
+macos: libCwtch.so
 
 android: cwtch.aar
 
