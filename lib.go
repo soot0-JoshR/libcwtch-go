@@ -109,6 +109,9 @@ func _startCwtch(appDir string, torPath string) {
 		return
 	}
 
+	log.Infof("Creating new EventHandler()")
+	eventHandler = utils.NewEventHandler()
+
 	// Exclude Tapir wire Messages
 	//(We need a TRACE level)
 	log.ExcludeFromPattern("service.go")
@@ -143,9 +146,6 @@ func _startCwtch(appDir string, torPath string) {
 	if err != nil {
 		panic(err)
 	}
-
-	log.Infof("Creating new EventHandler()")
-	eventHandler = utils.NewEventHandler()
 
 	log.Infof("making directory %v", appDir)
 	os.MkdirAll(path.Join(appDir, "tor"), 0700)
