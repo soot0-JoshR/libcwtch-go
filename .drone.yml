@@ -82,7 +82,7 @@ steps:
      - find . -type f -exec sha256sum {} \; > ./../sha256s.txt
      - mv ./../sha256s.txt .
      - cd ..
-     - scp -r -o StrictHostKeyChecking=no -i ~/id_rsa $DIR buildfiles@openprivacy.ca:/home/buildfiles/buildfiles/
+     - scp -r -o StrictHostKeyChecking=no -i ~/id_rsa $DIR buildfiles@build.openprivacy.ca:/home/buildfiles/buildfiles/
 
   - name: gitea-release
     image: plugins/gitea-release
