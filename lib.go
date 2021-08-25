@@ -2,7 +2,10 @@
 
 package main
 
+// //Needed to invoke C.free
+// #include <stdlib.h>
 import "C"
+
 import (
 	"crypto/rand"
 	"cwtch.im/cwtch/app"
@@ -21,6 +24,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"encoding/base64"
 	"git.openprivacy.ca/openprivacy/connectivity/tor"
@@ -381,6 +385,7 @@ func SendProfileEvent(onion string, eventJson string) {
 }
 
 //export c_GetAppBusEvent
+// the pointer returned from this function **must** be freed using c_Free
 func c_GetAppBusEvent() *C.char {
 	return C.CString(GetAppBusEvent())
 }
@@ -425,20 +430,6 @@ func c_LoadProfiles(passwordPtr *C.char, passwordLen C.int) {
 
 func LoadProfiles(pass string) {
 	application.LoadProfiles(pass)
-}
-
-//export c_ContactEvents
-func c_ContactEvents() *C.char {
-	return C.CString(ContactEvents())
-}
-
-func ContactEvents() string {
-	select {
-	case myevent := <-contactEventsQueue.OutChan():
-		return fmt.Sprintf("%v", myevent)
-	default:
-		return ""
-	}
 }
 
 //export c_AcceptContact
@@ -520,6 +511,7 @@ func UpdateMessageFlags(profileOnion, handle string, mIdx int, flags int64) {
 }
 
 //export c_GetMessage
+// the pointer returned from this function **must** be Freed  by c_Free
 func c_GetMessage(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, message_index C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	handle := C.GoStringN(handle_ptr, handle_len)
@@ -585,11 +577,18 @@ func GetMessage(profileOnion, handle string, message_index int) string {
 }
 
 //export c_GetMessagesByContentHash
+// the pointer returned from this function **must** be freed by calling c_Free
 func c_GetMessagesByContentHash(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, contenthash_ptr *C.char, contenthash_len C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	handle := C.GoStringN(handle_ptr, handle_len)
 	contentHash := C.GoStringN(contenthash_ptr, contenthash_len)
 	return C.CString(GetMessagesByContentHash(profile, handle, contentHash))
+}
+
+//export c_FreePointer
+// Dangerous function. Should only be used as documented in `MEMORY.md`
+func c_FreePointer(ptr *C.char) {
+	C.free(unsafe.Pointer(ptr))
 }
 
 func GetMessagesByContentHash(profileOnion, handle string, contentHash string) string {
