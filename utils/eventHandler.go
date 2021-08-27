@@ -359,6 +359,7 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.GroupCreated, q)
 	eventBus.Subscribe(event.NewGroup, q)
 	eventBus.Subscribe(event.AcceptGroupInvite, q)
+	eventBus.Subscribe(event.SetPeerAttribute, q)
 	eventBus.Subscribe(event.SetGroupAttribute, q)
 	eventBus.Subscribe(event.DeleteGroup, q)
 	eventBus.Subscribe(event.SendMessageToGroupError, q)
