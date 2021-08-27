@@ -44,8 +44,6 @@ const (
 
 var application app.Application
 var eventHandler *utils.EventHandler
-var acnQueue event.Queue
-var contactEventsQueue event.Queue
 var globalACN connectivity.ACN
 
 // ChatMessage API currently not officially documented, see
@@ -60,10 +58,10 @@ type ChatMessage struct {
 }
 
 //export c_StartCwtch
-func c_StartCwtch(dir_c *C.char, len C.int, tor_c *C.char, torLen C.int) int8 {
+func c_StartCwtch(dir_c *C.char, len C.int, tor_c *C.char, torLen C.int) C.int {
 	dir := C.GoStringN(dir_c, len)
 	tor := C.GoStringN(tor_c, torLen)
-	return int8(StartCwtch(dir, tor))
+	return C.int(StartCwtch(dir, tor))
 }
 
 // StartCwtch starts cwtch in the library and initlaizes all data structures
@@ -162,11 +160,6 @@ func _startCwtch(appDir string, torPath string) {
 	}
 	globalACN = acn
 	newApp := app.NewApp(acn, appDir)
-	acnQueue = event.NewQueue()
-	newApp.GetPrimaryBus().Subscribe(event.ACNStatus, acnQueue)
-	newApp.GetPrimaryBus().Subscribe(utils.UpdateGlobalSettings, acnQueue)
-	newApp.GetPrimaryBus().Subscribe(utils.SetLoggingLevel, acnQueue)
-	newApp.GetPrimaryBus().Subscribe(event.AppError, acnQueue)
 
 	eventHandler.HandleApp(newApp)
 
@@ -344,6 +337,7 @@ const (
 )
 
 // SendProfileEvent is a generic method for Rebroadcasting Profile Events from a UI
+// Should generally be used for rapidly prototyping new APIs
 func SendProfileEvent(onion string, eventJson string) {
 	// Convert the Event Json back to a typed Event Struct, this will make the
 	// rest of the logic nicer.
@@ -360,16 +354,18 @@ func SendProfileEvent(onion string, eventJson string) {
 	// We need to update the local cache
 	// Ideally I think this would be pushed back into Cwtch
 	switch new_event.EventType {
+	// DEPRECATED: use ImportBundle
 	case AddContact:
-		// Peer Functionality is Always Enabled, so we forgo the existence check...
-		// TODO: Combine with GroupFunctionality to make a meta-handleimportstring that can do both!
 		pf, _ := contact.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
 		err := pf.HandleImportString(peer, new_event.Data[ImportString])
 		eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: err.Error()}))
+	// DEPRECATED: use SetProfileAttribute()
 	case event.SetAttribute:
 		peer.SetAttribute(new_event.Data[event.Key], new_event.Data[event.Data])
+	// DEPRECATED: use SetContactAttribute()
 	case event.SetPeerAttribute:
 		peer.SetContactAttribute(new_event.Data[event.RemotePeer], new_event.Data[event.Key], new_event.Data[event.Data])
+	// DEPRECATED: use AcceptContact() and BlockContact()
 	case event.SetPeerAuthorization:
 		peer.SetContactAuthorization(new_event.Data[event.RemotePeer], model.Authorization(new_event.Data[event.Authorization]))
 
@@ -781,6 +777,35 @@ func ImportBundle(profileOnion string, bundle string) {
 		}
 	}
 	eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: response.Error()}))
+}
+
+//export c_SetProfileAttribute
+func c_SetProfileAttribute(profile_ptr *C.char, profile_len C.int, key_ptr *C.char, key_len C.int, val_ptr *C.char, val_len C.int) {
+	profileOnion := C.GoStringN(profile_ptr, profile_len)
+	key := C.GoStringN(key_ptr, key_len)
+	value := C.GoStringN(val_ptr, val_len)
+	SetProfileAttribute(profileOnion, key, value)
+}
+
+// SetProfileAttribute provides a wrapper around profile.SetAttribute
+func SetProfileAttribute(profileOnion string, key string, value string) {
+	profile := application.GetPeer(profileOnion)
+	profile.SetAttribute(key, value)
+}
+
+//export c_SetContactAttribute
+func c_SetContactAttribute(profile_ptr *C.char, profile_len C.int, contact_ptr *C.char, contact_len C.int, key_ptr *C.char, key_len C.int, val_ptr *C.char, val_len C.int) {
+	profileOnion := C.GoStringN(profile_ptr, profile_len)
+	contactHandle := C.GoStringN(contact_ptr, contact_len)
+	key := C.GoStringN(key_ptr, key_len)
+	value := C.GoStringN(val_ptr, val_len)
+	SetContactAttribute(profileOnion, contactHandle, key, value)
+}
+
+// SetContactAttribute provides a wrapper around profile.SetProfileAttribute
+func SetContactAttribute(profileOnion string, contactHandle string, key string, value string) {
+	profile := application.GetPeer(profileOnion)
+	profile.SetContactAttribute(contactHandle, key, value)
 }
 
 //export c_SetGroupAttribute
