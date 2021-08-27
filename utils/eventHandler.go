@@ -166,6 +166,10 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				if !set {
 					saveHistory = event.DeleteHistoryDefault
 				}
+				isArchived, set := contactInfo.GetAttribute(attr.GetLocalScope(constants.Archived))
+				if !set {
+					isArchived = event.False
+				}
 				contacts = append(contacts, Contact{
 					Name:          name,
 					Onion:         contactInfo.Onion,
@@ -177,6 +181,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					Unread:        0,
 					LastMessage:   strconv.Itoa(getLastMessageTime(&contactInfo.Timeline)),
 					IsGroup:       false,
+					IsArchived:    isArchived == event.True,
 				})
 			}
 
@@ -196,7 +201,10 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				if group.Accepted {
 					authorization = model.AuthApproved
 				}
-
+				isArchived, set := group.GetAttribute(attr.GetLocalScope(constants.Archived))
+				if !set {
+					isArchived = event.False
+				}
 				// Use the server state when assessing group state
 				state := profile.GetContact(group.GroupServer).State
 
@@ -212,6 +220,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					LastMessage:   strconv.Itoa(getLastMessageTime(&group.Timeline)),
 					IsGroup:       true,
 					GroupServer:   group.GroupServer,
+					IsArchived:    isArchived == event.True,
 				})
 			}
 
@@ -257,10 +266,12 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ev.Event.Data["Nick"] = ph.GetNick(ev.Event.Data["RemotePeer"])
 			ev.Event.Data["Picture"] = ph.GetProfilePic(ev.Event.Data["RemotePeer"])
+			peer.SetContactAttribute(ev.Event.Data["RemotePeer"], attr.GetLocalScope(constants.Archived), event.False)
 		case event.NewMessageFromGroup:
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ev.Event.Data["Nick"] = ph.GetNick(ev.Event.Data[event.GroupID])
 			ev.Event.Data["Picture"] = ph.GetProfilePic(ev.Event.Data[event.GroupID])
+			peer.SetGroupAttribute(ev.Event.Data[event.GroupID], attr.GetLocalScope(constants.Archived), event.False)
 		case event.PeerAcknowledgement:
 			// No enrichement required
 		case event.PeerCreated:

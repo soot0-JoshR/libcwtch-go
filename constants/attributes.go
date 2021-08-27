@@ -6,6 +6,7 @@ const Name = "name"
 const LastRead = "last-read"
 const Picture = "picture"
 const ShowBlocked = "show-blocked"
+const Archived = "archived"
 
 const ProfileTypeV1DefaultPassword = "v1-defaultPassword"
 const ProfileTypeV1Password = "v1-userPassword"
