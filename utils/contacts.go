@@ -12,4 +12,5 @@ type Contact struct {
 	LastMessage   string `json:"lastMsgTime"`
 	IsGroup       bool   `json:"isGroup"`
 	GroupServer   string `json:"groupServer"`
+	IsArchived    bool   `json:"isArchived"`
 }

@@ -6,5 +6,8 @@ require (
 	cwtch.im/cwtch v0.9.2
 	git.openprivacy.ca/openprivacy/connectivity v1.4.5
 	git.openprivacy.ca/openprivacy/log v1.0.2
-	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c // indirect
+	golang.org/x/mobile v0.0.0-20210716004757-34ab1303b554 // indirect
+	golang.org/x/mod v0.5.0 // indirect
+	golang.org/x/sys v0.0.0-20210823070655-63515b42dcdf // indirect
+	golang.org/x/tools v0.1.5 // indirect
 )

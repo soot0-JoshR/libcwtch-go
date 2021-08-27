@@ -621,10 +621,12 @@ func SendMessage(profileOnion, handle, msg string) {
 		groupHandler, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 		if err == nil {
 			groupHandler.SendMessage(profile, handle, msg)
+			profile.SetGroupAttribute(handle, attr.GetLocalScope(constants.Archived), event.False)
 		}
 	} else {
 		contactHandler, _ := contact.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
 		contactHandler.SendMessage(profile, handle, msg)
+		profile.SetContactAttribute(handle, attr.GetLocalScope(constants.Archived), event.False)
 	}
 }
 
@@ -713,32 +715,42 @@ func DeleteProfile(profile string, password string) {
 	application.DeletePeer(profile, password)
 }
 
-//export c_LeaveConversation
-func c_LeaveConversation(profile_ptr *C.char, profile_len C.int, contact_ptr *C.char, contact_len C.int) {
+//export c_ArchiveConversation
+func c_ArchiveConversation(profile_ptr *C.char, profile_len C.int, contact_ptr *C.char, contact_len C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	contact := C.GoStringN(contact_ptr, contact_len)
-	LeaveConversation(profile, contact)
+	ArchiveConversation(profile, contact)
 }
 
-// LeaveConversation forces profile to leave the peer
-func LeaveConversation(profile string, contact string) {
+// ArchiveConversation sets the conversation to archived
+func ArchiveConversation(profile string, handle string) {
 	peer := application.GetPeer(profile)
-	peer.DeleteContact(contact)
+	ph := utils.NewPeerHelper(peer)
+	if ph.IsGroup(handle) {
+		peer.SetGroupAttribute(handle, attr.GetLocalScope(constants.Archived), event.True)
+	} else {
+		peer.SetContactAttribute(handle, attr.GetLocalScope(constants.Archived), event.True)
+	}
 }
 
-//export c_LeaveGroup
-func c_LeaveGroup(profile_ptr *C.char, profile_len C.int, group_ptr *C.char, group_len C.int) {
+//export c_DeleteContact
+func c_DeleteContact(profile_ptr *C.char, profile_len C.int, hanlde_ptr *C.char, handle_len C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
-	groupID := C.GoStringN(group_ptr, group_len)
-	LeaveGroup(profile, groupID)
+	groupID := C.GoStringN(hanlde_ptr, handle_len)
+	DeleteContact(profile, groupID)
 }
 
-// LeaveGroup forces profile to leave the group groupID
-func LeaveGroup(profile string, groupID string) {
+// DeleteContact removes all trace of the contact from the profile
+func DeleteContact(profile string, handle string) {
 	peer := application.GetPeer(profile)
-	_, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
-	if err == nil {
-		peer.DeleteGroup(groupID)
+	ph := utils.NewPeerHelper(peer)
+	if ph.IsGroup(handle) {
+		_, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+		if err == nil {
+			peer.DeleteGroup(handle)
+		}
+	} else {
+		peer.DeleteContact(handle)
 	}
 }
 
