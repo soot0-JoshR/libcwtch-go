@@ -3,5 +3,6 @@ cwtch-sources.jar
 cwtch.aar
 libCwtch.h
 libCwtch.so
+libCwtch.dylib
 libCwtch.dll
 ios/
