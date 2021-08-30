@@ -8,7 +8,7 @@ all: linux android windows
 
 linux: libCwtch.so
 
-macos: libCwtch.so
+macos: libCwtch.dylib
 
 android: cwtch.aar
 
@@ -17,6 +17,10 @@ windows: libCwtch.dll
 libCwtch.so: lib.go 
 	./switch-ffi.sh
 	go build -buildmode c-shared -o libCwtch.so
+
+libCwtch.dylib: lib.go 
+	./switch-ffi.sh
+	go build -buildmode c-shared -o libCwtch.dylib
 
 cwtch.aar: lib.go
 	./switch-gomobile.sh
