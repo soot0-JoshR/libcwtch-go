@@ -81,6 +81,9 @@ func StartCwtch(appDir string, torPath string) int {
 			log.Errorf("could not create file log: %v\n", err)
 		}
 	}
+	if runtime.GOOS == "android" {
+		log.SetUseColor(false)
+	}
 	log.SetLevel(log.LevelInfo)
 	if logLevel := os.Getenv("LOG_LEVEL"); strings.ToLower(logLevel) == "debug" {
 		log.SetLevel(log.LevelDebug)
