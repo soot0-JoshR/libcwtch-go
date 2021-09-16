@@ -596,9 +596,12 @@ func GetMessagesByContentHash(profileOnion, handle string, contentHash string) s
 		profile := application.GetPeer(profileOnion)
 		ph := utils.NewPeerHelper(profile)
 		var err error
-		indexedMessages, err = ph.GetTimeline(handle).GetMessagesByHash(contentHash)
-		if err != nil {
-			indexedMessages = []model.LocallyIndexedMessage{}
+		timeline := ph.GetTimeline(handle)
+		if timeline != nil {
+			indexedMessages, err = timeline.GetMessagesByHash(contentHash)
+			if err != nil {
+				indexedMessages = []model.LocallyIndexedMessage{}
+			}
 		}
 	}
 	bytes, _ := json.Marshal(indexedMessages)
