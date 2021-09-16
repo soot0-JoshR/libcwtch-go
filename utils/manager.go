@@ -36,7 +36,8 @@ func (p *PeerHelper) IsServer(id string) bool {
 	return ok
 }
 
-// GetTimeline returns a pointer to the timeline associated with the conversation handle
+// GetTimeline returns a pointer to the timeline associated with the conversation handle or nil if the handle
+// does not exist (this can happen if the conversation has been deleted)
 func (p *PeerHelper) GetTimeline(handle string) *model.Timeline {
 	if p.IsServer(handle) {
 		// This should *never* happen
@@ -45,9 +46,17 @@ func (p *PeerHelper) GetTimeline(handle string) *model.Timeline {
 	}
 	// We return a pointer to the timeline to avoid copying, accessing Timeline is thread-safe
 	if p.IsGroup(handle) {
-		return &p.peer.GetGroup(handle).Timeline
+		group :=  p.peer.GetGroup(handle)
+		if group == nil {
+			return nil
+		}
+		return &group.Timeline
 	}
-	return &p.peer.GetContact(handle).Timeline
+	contact :=  p.peer.GetContact(handle)
+	if contact == nil {
+		return nil
+	}
+	return &contact.Timeline
 }
 
 /*
