@@ -31,7 +31,7 @@ type GlobalSettings struct {
 	ExperimentsEnabled      bool
 	Experiments             map[string]bool
 	BlockUnknownConnections bool
-	StreamerMode			bool
+	StreamerMode            bool
 	StateRootPane           int
 	FirstTime               bool
 	UIColumnModePortrait    string
@@ -47,7 +47,7 @@ var DefaultGlobalSettings = GlobalSettings{
 	StateRootPane:           0,
 	FirstTime:               true,
 	BlockUnknownConnections: false,
-	StreamerMode: 			 false,
+	StreamerMode:            false,
 	UIColumnModePortrait:    "DualpaneMode.Single",
 	UIColumnModeLandscape:   "DualpaneMode.CopyPortrait",
 }

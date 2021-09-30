@@ -372,6 +372,13 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.ChangePasswordError, q)
 	eventBus.Subscribe(event.NewRetValMessageFromPeer, q)
 	eventBus.Subscribe(event.SetAttribute, q)
+	eventBus.Subscribe(event.ShareManifest, q)
+	eventBus.Subscribe(event.ManifestSizeReceived, q)
+	eventBus.Subscribe(event.ManifestError, q)
+	eventBus.Subscribe(event.ManifestReceived, q)
+	eventBus.Subscribe(event.ManifestSaved, q)
+	eventBus.Subscribe(event.FileDownloadProgressUpdate, q)
+	eventBus.Subscribe(event.FileDownloaded, q)
 
 	go eh.forwardProfileMessages(onion, q)
 

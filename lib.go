@@ -8,32 +8,35 @@ import "C"
 
 import (
 	"crypto/rand"
-	"cwtch.im/cwtch/app"
-	"cwtch.im/cwtch/event"
-	"cwtch.im/cwtch/model"
-	"cwtch.im/cwtch/model/attr"
-	"cwtch.im/cwtch/peer"
 	"encoding/json"
 	"fmt"
-	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
-	contact "git.openprivacy.ca/cwtch.im/libcwtch-go/features/contacts"
-	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
-	"git.openprivacy.ca/cwtch.im/libcwtch-go/utils"
-	"git.openprivacy.ca/openprivacy/connectivity"
 	"os/user"
 	"runtime"
 	"strconv"
 	"strings"
 	"unsafe"
 
+	"cwtch.im/cwtch/app"
+	"cwtch.im/cwtch/event"
+	"cwtch.im/cwtch/functionality/filesharing"
+	"cwtch.im/cwtch/model"
+	"cwtch.im/cwtch/model/attr"
+	"cwtch.im/cwtch/peer"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
+	contact "git.openprivacy.ca/cwtch.im/libcwtch-go/features/contacts"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/utils"
+	"git.openprivacy.ca/openprivacy/connectivity"
+
 	"encoding/base64"
-	"git.openprivacy.ca/openprivacy/connectivity/tor"
-	"git.openprivacy.ca/openprivacy/log"
 	mrand "math/rand"
 	"os"
 	"path"
 	"path/filepath"
 	"time"
+
+	"git.openprivacy.ca/openprivacy/connectivity/tor"
+	"git.openprivacy.ca/openprivacy/log"
 )
 
 const (
@@ -84,7 +87,7 @@ func StartCwtch(appDir string, torPath string) int {
 	if runtime.GOOS == "android" {
 		log.SetUseColor(false)
 	}
-	log.SetLevel(log.LevelInfo)
+
 	if logLevel := os.Getenv("LOG_LEVEL"); strings.ToLower(logLevel) == "debug" {
 		log.SetLevel(log.LevelDebug)
 	}
@@ -180,6 +183,7 @@ func _startCwtch(appDir string, torPath string) {
 		event.ServerStateChange,
 		event.ProtocolEngineStopped,
 		event.RetryServerRequest,
+		event.ManifestReceived,
 	}
 	settings := utils.ReadGlobalSettings()
 	settingsJson, _ := json.Marshal(settings)
@@ -254,7 +258,6 @@ func ReconnectCwtchForeground() {
 	application.GetPrimaryBus().Publish(event.NewEvent(utils.CwtchStarted, map[event.Field]string{}))
 	application.QueryACNStatus()
 	application.QueryACNVersion()
-
 }
 
 //export c_SendAppEvent
@@ -663,6 +666,61 @@ func SendInvitation(profileOnion, handle, target string) {
 		log.Errorf("malformed invite: %v", err)
 	} else {
 		SendMessage(profileOnion, handle, string(inviteBytes))
+	}
+}
+
+//export c_ShareFile
+func c_ShareFile(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, filepath_ptr *C.char, filepath_len C.int) {
+	profile := C.GoStringN(profile_ptr, profile_len)
+	handle := C.GoStringN(handle_ptr, handle_len)
+	filepath := C.GoStringN(filepath_ptr, filepath_len)
+	ShareFile(profile, handle, filepath)
+}
+
+func ShareFile(profileOnion, handle, filepath string) {
+	profile := application.GetPeer(profileOnion)
+	fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
+	if err != nil {
+		log.Errorf("file sharing error: %v", err)
+	} else {
+		fh.ShareFile(filepath, profile, handle)
+	}
+}
+
+//export c_DownloadFile
+func c_DownloadFile(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, filepath_ptr *C.char, filepath_len C.int, manifestpath_ptr *C.char, manifestpath_len C.int, filekey_ptr *C.char, filekey_len C.int) {
+	profile := C.GoStringN(profile_ptr, profile_len)
+	handle := C.GoStringN(handle_ptr, handle_len)
+	filepath := C.GoStringN(filepath_ptr, filepath_len)
+	manifestpath := C.GoStringN(manifestpath_ptr, manifestpath_len)
+	filekey := C.GoStringN(filekey_ptr, filekey_len)
+	DownloadFile(profile, handle, filepath, manifestpath, filekey)
+}
+
+func DownloadFile(profileOnion, handle, filepath, manifestpath, filekey string) {
+	profile := application.GetPeer(profileOnion)
+	fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
+	if err != nil {
+		log.Errorf("file sharing error: %v", err)
+	} else {
+		fh.DownloadFile(profile, handle, filepath, manifestpath, filekey)
+	}
+}
+
+//export c_CheckDownloadStatus
+func c_CheckDownloadStatus(profilePtr *C.char, profileLen C.int, fileKeyPtr *C.char, fileKeyLen C.int) {
+	CheckDownloadStatus(C.GoStringN(profilePtr, profileLen), C.GoStringN(fileKeyPtr, fileKeyLen))
+}
+
+func CheckDownloadStatus(profileOnion, fileKey string) {
+	profile := application.GetPeer(profileOnion)
+	if path, exists := profile.GetAttribute(attr.GetLocalScope(fileKey)); exists {
+		eventHandler.Push(event.NewEvent(event.FileDownloaded, map[event.Field]string{
+			ProfileOnion:   profileOnion,
+			event.FileKey:  fileKey,
+			event.FilePath: path,
+			event.TempFile: "",
+		}))
 	}
 }
 

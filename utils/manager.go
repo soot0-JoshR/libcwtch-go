@@ -46,13 +46,13 @@ func (p *PeerHelper) GetTimeline(handle string) *model.Timeline {
 	}
 	// We return a pointer to the timeline to avoid copying, accessing Timeline is thread-safe
 	if p.IsGroup(handle) {
-		group :=  p.peer.GetGroup(handle)
+		group := p.peer.GetGroup(handle)
 		if group == nil {
 			return nil
 		}
 		return &group.Timeline
 	}
-	contact :=  p.peer.GetContact(handle)
+	contact := p.peer.GetContact(handle)
 	if contact == nil {
 		return nil
 	}
@@ -110,8 +110,12 @@ func (p *PeerHelper) GetNick(id string) string {
 			nick, exists = p.peer.GetContactAttribute(id, attr.GetPeerScope(constants.Name))
 			if !exists {
 				nick = "[" + id + "]"
-				// re-request
-				p.peer.SendGetValToPeer(id, attr.PublicScope, constants.Name)
+				// we do not have a canonical nick for this contact.
+				// re-request if authenticated
+				// TODO: This check probably doesn't belong here...
+				if contact := p.peer.GetContact(id); contact != nil && contact.State == connections.ConnectionStateName[connections.AUTHENTICATED] {
+					p.peer.SendGetValToPeer(id, attr.PublicScope, constants.Name)
+				}
 			}
 		}
 		return nick
