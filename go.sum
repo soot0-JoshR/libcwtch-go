@@ -1,7 +1,5 @@
-cwtch.im/cwtch v0.11.0 h1:CwmbaMEbL0lOiPagfWxA7po2HSq49B1lcFjPB7UR8k4=
-cwtch.im/cwtch v0.11.0/go.mod h1:QpTkQK7MqNt0dQK9/pBk5VpkvFhy6xuoxJIn401B8fM=
-cwtch.im/cwtch v0.11.1 h1:9HHcGwij3WIt53ZuKQUSqQ4x29CnZJ7TufA+t+cat/M=
-cwtch.im/cwtch v0.11.1/go.mod h1:QpTkQK7MqNt0dQK9/pBk5VpkvFhy6xuoxJIn401B8fM=
+cwtch.im/cwtch v0.11.2 h1:a38zZLSNsKJzLStBDOIoYKKIL56V9ueQvOZfnIEVc5I=
+cwtch.im/cwtch v0.11.2/go.mod h1:QpTkQK7MqNt0dQK9/pBk5VpkvFhy6xuoxJIn401B8fM=
 filippo.io/edwards25519 v1.0.0-rc.1 h1:m0VOOB23frXZvAOK44usCgLWvtsxIoMCTBGJZlpmGfU=
 filippo.io/edwards25519 v1.0.0-rc.1/go.mod h1:N1IkdkCkiLB6tki+MYJoSx2JTY9NUlxZE7eHn5EwJns=
 git.openprivacy.ca/cwtch.im/tapir v0.4.9 h1:LXonlztwvI1F1++0IyomIcDH1/Bxzo+oN8YjGonNvjM=
