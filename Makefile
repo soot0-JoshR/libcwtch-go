@@ -31,7 +31,7 @@ libCwtch.dll: lib.go
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc-win32 go build -buildmode c-shared -o libCwtch.dll
 
 clean: 
-	rm -f cwtch.aar cwtch_go.apk libCwtch.h libCwtch.so cwtch-sources.jar libCwtch.dll
+	rm -f cwtch.aar cwtch_go.apk libCwtch.h libCwtch.so cwtch-sources.jar libCwtch.dll libCwtch.dylib
 
 # iOS - for testing purposes only for now, not officially supported
 
