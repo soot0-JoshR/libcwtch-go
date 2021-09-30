@@ -31,7 +31,6 @@ import (
 	"encoding/base64"
 	mrand "math/rand"
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 
@@ -156,7 +155,7 @@ func _startCwtch(appDir string, torPath string) {
 	}
 
 	log.Infof("making directory %v", appDir)
-	os.MkdirAll(path.Join(appDir, "tor"), 0700)
+	os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
 	tor.NewTorrc().WithSocksPort(port).WithOnionTrafficOnly().WithControlPort(controlPort).WithHashedPassword(base64.StdEncoding.EncodeToString(key)).Build(filepath.Join(appDir, "tor", "torrc"))
 	acn, err := tor.NewTorACNWithAuth(appDir, torPath, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
 	if err != nil {
