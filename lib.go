@@ -10,6 +10,8 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
+	"git.openprivacy.ca/cwtch.im/server"
 	"os/user"
 	"runtime"
 	"strconv"
@@ -45,6 +47,7 @@ const (
 )
 
 var application app.Application
+var globalAppDir string
 var eventHandler *utils.EventHandler
 var globalACN connectivity.ACN
 
@@ -86,7 +89,8 @@ func StartCwtch(appDir string, torPath string) int {
 	if runtime.GOOS == "android" {
 		log.SetUseColor(false)
 	}
-
+	log.SetLevel(log.LevelInfo)
+	log.AddEverythingFromPattern("libcwtch-go")
 	if logLevel := os.Getenv("LOG_LEVEL"); strings.ToLower(logLevel) == "debug" {
 		log.SetLevel(log.LevelDebug)
 	}
@@ -181,8 +185,10 @@ func _startCwtch(appDir string, torPath string) {
 		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
 		return
 	}
+	globalAppDir = appDir
 	globalACN = acn
 	newApp := app.NewApp(acn, appDir)
+	servers.InitServers(acn, appDir)
 
 	eventHandler.HandleApp(newApp)
 
@@ -304,8 +310,18 @@ func SendAppEvent(eventJson string) {
 		log.Debugf("New Settings %v", globalSettings)
 		utils.WriteGlobalSettings(globalSettings)
 
+		settings := utils.ReadGlobalSettings()
+
+		serverHandler, err := servers.ExperimentGate(settings.Experiments)
+		if err == nil {
+			serverHandler.LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
+			serverHandler.LaunchServers()
+		} else {
+			servers.DeactivateServers()
+		}
+
 		// Group Experiment Refresh
-		groupHandler, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+		groupHandler, err := groups.ExperimentGate(settings.Experiments)
 		if err == nil {
 			for _, profileOnion := range application.ListProfiles() {
 				serverListForOnion := groupHandler.GetServerInfoList(application.GetPeer(profileOnion))
@@ -316,7 +332,7 @@ func SendAppEvent(eventJson string) {
 
 		// Explicitly toggle blocking/unblocking of unknown connections for profiles
 		// that have been loaded.
-		if utils.ReadGlobalSettings().BlockUnknownConnections {
+		if settings.BlockUnknownConnections {
 			for _, onion := range application.ListProfiles() {
 				application.GetPeer(onion).BlockUnknownConnections()
 			}
@@ -937,6 +953,127 @@ func ShutdownCwtch() {
 		eventHandler = nil
 	}
 }
+
+//***** Server APIs *****
+
+//export c_LoadServers
+func c_LoadServers(passwordPtr *C.char, passwordLen C.int) {
+	LoadServers(C.GoStringN(passwordPtr, passwordLen))
+}
+
+func LoadServers(password string) {
+	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+	if err == nil {
+		serversList, err := serversHandler.LoadServers(password)
+		if err != nil {
+			log.Errorf("Error attempting to load servers :%s\n", err)
+			application.GetPrimaryBus().Publish(event.NewEventList(servers.ZeroServersLoaded))
+		} else if len(serversList) == 0 {
+			application.GetPrimaryBus().Publish(event.NewEventList(servers.ZeroServersLoaded))
+		} else {
+			for _, serverOnion := range serversList {
+				json := serversHandler.SeverToJson(serverOnion)
+				application.GetPrimaryBus().Publish(event.NewEventList(servers.NewServer, event.Data, json))
+			}
+		}
+	}
+}
+
+//export c_CreateServer
+func c_CreateServer(passwordPtr *C.char, passwordLen C.int) {
+	CreateServer(C.GoStringN(passwordPtr, passwordLen))
+}
+
+func CreateServer(password string) {
+	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+	if err == nil {
+		server, err := serversHandler.CreateServer(password)
+		if err != nil {
+			log.Errorf("Could not create new server: %s\n", err)
+		} else {
+			json := serversHandler.SeverToJson(server.Onion())
+			application.GetPrimaryBus().Publish(event.NewEventList(servers.NewServer, event.Data, json))
+		}
+	}
+}
+
+//export c_DeleteServer
+func c_DeleteServer(onionPtr *C.char, onionLen C.int, currentPasswordPtr *C.char, currentPasswordLen C.int) {
+	DeleteServer(C.GoStringN(onionPtr, onionLen), C.GoStringN(currentPasswordPtr, currentPasswordLen))
+}
+
+func DeleteServer(onion string, currentPassword string) {
+	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+	if err == nil {
+		serversHandler.ShutdownServer(onion)
+		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, servers.Intent, servers.IntentDisabled))
+		serversHandler.DeleteServer(onion, currentPassword)
+		// TODO HANDLE err from DeletServer?
+	}
+}
+
+//export c_LaunchServers
+func c_LaunchServers() {
+	LaunchServers()
+}
+
+func LaunchServers() {
+	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+	if err == nil {
+		for _, onion := range serversHandler.ListServers() {
+			autostart := false
+			if s := serversHandler.GetServer(onion); s != nil {
+				autostart = s.GetAttribute(server.AttrAutostart) == "true"
+			}
+			if autostart {
+				LaunchServer(onion)
+			}
+		}
+	}
+}
+
+//export c_LaunchServer
+func c_LaunchServer(onionPtr *C.char, onionLen C.int) {
+	LaunchServer(C.GoStringN(onionPtr, onionLen))
+}
+
+func LaunchServer(onion string) {
+	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+	if err == nil {
+		serversHandler.LaunchServer(onion)
+		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, servers.Intent, servers.IntentEnabled))
+	}
+}
+
+
+//export c_ShutdownServer
+func c_ShutdownServer(onionPtr *C.char, onionLen C.int) {
+	ShutdownServer(C.GoStringN(onionPtr, onionLen))
+}
+
+func ShutdownServer(onion string) {
+	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+	if err == nil {
+		serversHandler.ShutdownServer(onion)
+		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, servers.Intent, servers.IntentDisabled))
+	}
+}
+
+//export c_ShutdownServers
+func c_ShutdownServers() {
+	ShutdownServers()
+}
+
+func ShutdownServers() {
+	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+	if err == nil {
+		for _, onion := range serversHandler.ListServers() {
+			ShutdownServer(onion)
+		}
+	}
+}
+
+// ***** END Server APIs *****
 
 // Leave as is, needed by ffi
 func main() {}
