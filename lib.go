@@ -866,16 +866,19 @@ func c_SetProfileAttribute(profile_ptr *C.char, profile_len C.int, key_ptr *C.ch
 }
 
 // SetProfileAttribute provides a wrapper around profile.SetScopedZonedAttribute
+// WARNING: Because this function is potentially dangerous all keys and zones must be added
+// explicitly. If you are attempting to added behaviour to the UI that requires the existence of new keys
+// you probably want to be building out functionality/subsystem in the UI itself.
 // Key must have the format zone.key where Zone is defined in Cwtch. Unknown zones are not permitted.
 func SetProfileAttribute(profileOnion string, key string, value string) {
 	profile := application.GetPeer(profileOnion)
 
 	zone, key := attr.ParseZone(key)
-	if zone != attr.UnknownZone {
-		// TODO: We only allow Locally scoped attributes to be set here.
-		// To set a publicly scoped zone you need to write a dedicated handler/functionality
-		// And this probably belongs in Cwtch
-		profile.SetScopedZonedAttribute(attr.LocalScope, zone, key, value)
+
+	// TODO We only allow public.profile.zone to be set for now.
+	// All other scopes and zones need to be added explicitly or handled by Cwtch.
+	if zone == attr.ProfileZone && key == constants.Name {
+		profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name, value)
 	} else {
 		log.Errorf("attempted to set an attribute with an unknown zone: %v", key)
 	}

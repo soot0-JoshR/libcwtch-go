@@ -89,8 +89,6 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			e.Data[constants.Tag] = tag
 
 			if e.Data[event.Created] == event.True {
-				name, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
-				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name, name)
 				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.Picture, ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro)))
 			}
 			if e.Data[event.Status] != event.StorageRunning || e.Data[event.Created] == event.True {
@@ -115,11 +113,6 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				}
 			}
 
-			nick, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
-			if !exists {
-				nick = onion
-			}
-
 			picVal, ok := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.Picture)
 			if !ok {
 				picVal = ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro))
@@ -131,12 +124,12 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			picPath := GetPicturePath(pic)
 
 			// Set publicly scopes attributes
-			profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name, nick)
 			profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.Picture, picPath)
 
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
 
-			e.Data[constants.Name] = nick
+			// Name always exists
+			e.Data[constants.Name], _ = profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
 			e.Data[constants2.Picture] = picPath
 			e.Data["Online"] = online
 
