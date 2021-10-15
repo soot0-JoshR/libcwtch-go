@@ -96,7 +96,7 @@ func (gf *GroupFunctionality) HandleImportString(peer peer.CwtchPeer, importStri
 		if len(bundle) == 2 {
 			err := gf.HandleImportString(peer, bundle[0][len(tofuBundlePrefix):])
 			// if the server import failed then abort the whole process..
-			if !strings.HasSuffix(err.Error(), "success") {
+			if err != nil && !strings.HasSuffix(err.Error(), "success") {
 				return features.ConstructResponse(importBundlePrefix, err.Error())
 			}
 			return gf.HandleImportString(peer, bundle[1])

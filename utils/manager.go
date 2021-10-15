@@ -114,7 +114,7 @@ func (p *PeerHelper) GetNick(id string) string {
 				// re-request if authenticated
 				// TODO: This check probably doesn't belong here...
 				if contact := p.peer.GetContact(id); contact != nil && contact.State == connections.ConnectionStateName[connections.AUTHENTICATED] {
-					p.peer.SendGetValToPeer(id, attr.PublicScope, constants.Name)
+					p.peer.SendScopedZonedGetValToContact(id, attr.PublicScope, attr.ProfileZone, constants.Name)
 				}
 			}
 		}

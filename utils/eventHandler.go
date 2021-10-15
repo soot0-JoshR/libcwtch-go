@@ -93,12 +93,12 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			}
 
 			if e.Data[event.Created] == event.True {
-				name, _ := profile.GetAttribute(attr.GetLocalScope(constants.Name))
-				profile.SetAttribute(attr.GetPublicScope(constants.Name), name)
-				profile.SetAttribute(attr.GetPublicScope(constants.Picture), ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro)))
+				name, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
+				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name, name)
+				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Picture, ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro)))
 			}
 			if e.Data[event.Status] != event.StorageRunning || e.Data[event.Created] == event.True {
-				profile.SetAttribute(attr.GetLocalScope(constants.PeerOnline), event.False)
+				profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.PeerOnline, event.False)
 				eh.app.AddPeerPlugin(onion, plugins.CONNECTIONRETRY)
 				eh.app.AddPeerPlugin(onion, plugins.NETWORKCHECK)
 
@@ -119,12 +119,12 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				}
 			}
 
-			nick, exists := profile.GetAttribute(attr.GetPublicScope(constants.Name))
+			nick, exists := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
 			if !exists {
 				nick = onion
 			}
 
-			picVal, ok := profile.GetAttribute(attr.GetPublicScope(constants.Picture))
+			picVal, ok := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Picture)
 			if !ok {
 				picVal = ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro))
 			}
@@ -313,8 +313,8 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				//uiManager.UpdateContactStatus(contact.Onion, int(cxnState), false)
 				if cxnState == connections.AUTHENTICATED {
 					// if known and authed, get vars
-					peer.SendGetValToPeer(ev.Event.Data[event.RemotePeer], attr.PublicScope, constants.Name)
-					peer.SendGetValToPeer(ev.Event.Data[event.RemotePeer], attr.PublicScope, constants.Picture)
+					peer.SendScopedZonedGetValToContact(ev.Event.Data[event.RemotePeer], attr.PublicScope, attr.ProfileZone, constants.Name)
+					peer.SendScopedZonedGetValToContact(ev.Event.Data[event.RemotePeer], attr.PublicScope, attr.ProfileZone, constants.Picture)
 				}
 			}
 
@@ -326,9 +326,9 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			//val := ev.Event.Data[event.Data]
 			exists, _ := strconv.ParseBool(ev.Event.Data[event.Exists])
 
-			if exists && scope == attr.PublicScope {
+			if exists && attr.IntoScope(scope) == attr.PublicScope {
 				if _, exists := peer.GetContactAttribute(onion, attr.GetLocalScope(path)); exists {
-					// we have a locally set ovverride, don't pass this remote set public scope update to UI
+					// we have a locally set override, don't pass this remote set public scope update to UI
 					return ""
 				}
 			}
