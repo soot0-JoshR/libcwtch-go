@@ -5,9 +5,10 @@ import (
 	"cwtch.im/cwtch/app/plugins"
 	"cwtch.im/cwtch/model"
 	"cwtch.im/cwtch/model/attr"
+	"cwtch.im/cwtch/model/constants"
 	"cwtch.im/cwtch/protocol/connections"
 	"encoding/json"
-	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
+	constants2 "git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
 	"git.openprivacy.ca/openprivacy/log"
 	"strconv"
@@ -68,7 +69,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 		switch e.EventType {
 		case event.ACNStatus:
 			if e.Data[event.Progress] == "100" {
-				for onion := range eh.app.ListPeers() {
+				for _, onion := range eh.app.ListProfiles() {
 					// launch a listen thread (internally this does a check that the protocol engine is not listening)
 					// and as such is safe to call.
 					eh.app.GetPeer(onion).Listen()
@@ -83,22 +84,18 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				eh.startHandlingPeer(onion)
 			}
 
-			tag, isTagged := profile.GetAttribute(app.AttributeTag)
-			if isTagged {
-				e.Data[app.AttributeTag] = tag
-			} else {
-				// Assume encrypted for non-tagged profiles - this isn't always true, but all post-beta profiles
-				// are tagged on creation.
-				e.Data[app.AttributeTag] = constants.ProfileTypeV1Password
-			}
+			// CwtchPeer will always set this now...
+			tag,_ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.Tag)
+			e.Data[constants.Tag] = tag
+
 
 			if e.Data[event.Created] == event.True {
 				name, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
 				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name, name)
-				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Picture, ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro)))
+				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.Picture, ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro)))
 			}
 			if e.Data[event.Status] != event.StorageRunning || e.Data[event.Created] == event.True {
-				profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.PeerOnline, event.False)
+				profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline, event.False)
 				eh.app.AddPeerPlugin(onion, plugins.CONNECTIONRETRY)
 				eh.app.AddPeerPlugin(onion, plugins.NETWORKCHECK)
 
@@ -124,7 +121,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				nick = onion
 			}
 
-			picVal, ok := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Picture)
+			picVal, ok := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.Picture)
 			if !ok {
 				picVal = ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro))
 			}
@@ -134,12 +131,10 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			}
 			picPath := GetPicturePath(pic)
 
-			//tag, _ := profile.GetAttribute(app.AttributeTag)
-
-			online, _ := profile.GetAttribute(attr.GetLocalScope(constants.PeerOnline))
+			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
 
 			e.Data[constants.Name] = nick
-			e.Data[constants.Picture] = picPath
+			e.Data[constants2.Picture] = picPath
 			e.Data["Online"] = online
 
 			var contacts []Contact
@@ -166,7 +161,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				if !set {
 					saveHistory = event.DeleteHistoryDefault
 				}
-				isArchived, set := contactInfo.GetAttribute(attr.GetLocalScope(constants.Archived))
+				isArchived, set := contactInfo.GetAttribute(attr.GetLocalScope(constants2.Archived))
 				if !set {
 					isArchived = event.False
 				}
@@ -201,7 +196,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				if group.Accepted {
 					authorization = model.AuthApproved
 				}
-				isArchived, set := group.GetAttribute(attr.GetLocalScope(constants.Archived))
+				isArchived, set := group.GetAttribute(attr.GetLocalScope(constants2.Archived))
 				if !set {
 					isArchived = event.False
 				}
@@ -266,12 +261,12 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ev.Event.Data["Nick"] = ph.GetNick(ev.Event.Data["RemotePeer"])
 			ev.Event.Data["Picture"] = ph.GetProfilePic(ev.Event.Data["RemotePeer"])
-			peer.SetContactAttribute(ev.Event.Data["RemotePeer"], attr.GetLocalScope(constants.Archived), event.False)
+			peer.SetContactAttribute(ev.Event.Data["RemotePeer"], attr.GetLocalScope(constants2.Archived), event.False)
 		case event.NewMessageFromGroup:
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ev.Event.Data["Nick"] = ph.GetNick(ev.Event.Data[event.GroupID])
 			ev.Event.Data["Picture"] = ph.GetProfilePic(ev.Event.Data[event.GroupID])
-			peer.SetGroupAttribute(ev.Event.Data[event.GroupID], attr.GetLocalScope(constants.Archived), event.False)
+			peer.SetGroupAttribute(ev.Event.Data[event.GroupID], attr.GetLocalScope(constants2.Archived), event.False)
 		case event.PeerAcknowledgement:
 			// No enrichement required
 		case event.PeerCreated:
@@ -314,7 +309,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				if cxnState == connections.AUTHENTICATED {
 					// if known and authed, get vars
 					peer.SendScopedZonedGetValToContact(ev.Event.Data[event.RemotePeer], attr.PublicScope, attr.ProfileZone, constants.Name)
-					peer.SendScopedZonedGetValToContact(ev.Event.Data[event.RemotePeer], attr.PublicScope, attr.ProfileZone, constants.Picture)
+					peer.SendScopedZonedGetValToContact(ev.Event.Data[event.RemotePeer], attr.PublicScope, attr.ProfileZone, constants2.Picture)
 				}
 			}
 

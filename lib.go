@@ -230,14 +230,14 @@ func ReconnectCwtchForeground() {
 	}
 
 	// populate profile list
-	peerList := application.ListPeers()
-	for onion := range peerList {
+	peerList := application.ListProfiles()
+	for _, onion := range peerList {
 		eventHandler.Push(event.NewEvent(event.NewPeer, map[event.Field]string{event.Identity: onion, event.Created: event.False, "Reload": event.True}))
 	}
 
 	settings := utils.ReadGlobalSettings()
 
-	for profileOnion := range peerList {
+	for _,profileOnion := range peerList {
 		// fix peerpeercontact message counts
 		contactList := application.GetPeer(profileOnion).GetContacts()
 		for _, handle := range contactList {
@@ -307,7 +307,7 @@ func SendAppEvent(eventJson string) {
 		// Group Experiment Refresh
 		groupHandler, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 		if err == nil {
-			for profileOnion := range application.ListPeers() {
+			for _,profileOnion := range application.ListProfiles() {
 				serverListForOnion := groupHandler.GetServerInfoList(application.GetPeer(profileOnion))
 				serversListBytes, _ := json.Marshal(serverListForOnion)
 				eventHandler.Push(event.NewEvent(groups.UpdateServerInfo, map[event.Field]string{"ProfileOnion": profileOnion, groups.ServerList: string(serversListBytes)}))
@@ -317,11 +317,11 @@ func SendAppEvent(eventJson string) {
 		// Explicitly toggle blocking/unblocking of unknown connections for profiles
 		// that have been loaded.
 		if utils.ReadGlobalSettings().BlockUnknownConnections {
-			for onion := range application.ListPeers() {
+			for _,onion := range application.ListProfiles() {
 				application.GetPeer(onion).BlockUnknownConnections()
 			}
 		} else {
-			for onion := range application.ListPeers() {
+			for _,onion := range application.ListProfiles() {
 				application.GetPeer(onion).AllowUnknownConnections()
 			}
 		}
@@ -384,7 +384,7 @@ func SendProfileEvent(onion string, eventJson string) {
 		eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: err.Error()}))
 	// DEPRECATED: use SetProfileAttribute()
 	case event.SetAttribute:
-		peer.SetAttribute(new_event.Data[event.Key], new_event.Data[event.Data])
+		log.Errorf("SetAttribute is deprecated.")
 	// DEPRECATED: use SetContactAttribute()
 	case event.SetPeerAttribute:
 		peer.SetContactAttribute(new_event.Data[event.RemotePeer], new_event.Data[event.Key], new_event.Data[event.Data])
@@ -865,10 +865,20 @@ func c_SetProfileAttribute(profile_ptr *C.char, profile_len C.int, key_ptr *C.ch
 	SetProfileAttribute(profileOnion, key, value)
 }
 
-// SetProfileAttribute provides a wrapper around profile.SetAttribute
+// SetProfileAttribute provides a wrapper around profile.SetScopedZonedAttribute
+// Key must have the format zone.key where Zone is defined in Cwtch. Unknown zones are not permitted.
 func SetProfileAttribute(profileOnion string, key string, value string) {
 	profile := application.GetPeer(profileOnion)
-	profile.SetAttribute(key, value)
+
+	zone,key := attr.ParseZone(key)
+	if zone != attr.UnknownZone {
+		// TODO: We only allow Locally scoped attributes to be set here.
+		// To set a publicly scoped zone you need to write a dedicated handler/functionality
+		// And this probably belongs in Cwtch
+		profile.SetScopedZonedAttribute(attr.LocalScope, zone, key, value)
+	} else {
+		log.Errorf("attempted to set an attribute with an unknown zone: %v", key)
+	}
 }
 
 //export c_SetContactAttribute
