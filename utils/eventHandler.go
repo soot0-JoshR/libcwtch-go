@@ -85,9 +85,8 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			}
 
 			// CwtchPeer will always set this now...
-			tag,_ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.Tag)
+			tag, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.Tag)
 			e.Data[constants.Tag] = tag
-
 
 			if e.Data[event.Created] == event.True {
 				name, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
@@ -116,12 +115,12 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				}
 			}
 
-			nick, exists := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+			nick, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
 			if !exists {
 				nick = onion
 			}
 
-			picVal, ok := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.Picture)
+			picVal, ok := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.Picture)
 			if !ok {
 				picVal = ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro))
 			}
@@ -130,6 +129,10 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				pic = NewImage(RandomProfileImage(onion), TypeImageDistro)
 			}
 			picPath := GetPicturePath(pic)
+
+			// Set publicly scopes attributes
+			profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name, nick)
+			profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.Picture, picPath)
 
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
 

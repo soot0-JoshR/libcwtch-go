@@ -237,7 +237,7 @@ func ReconnectCwtchForeground() {
 
 	settings := utils.ReadGlobalSettings()
 
-	for _,profileOnion := range peerList {
+	for _, profileOnion := range peerList {
 		// fix peerpeercontact message counts
 		contactList := application.GetPeer(profileOnion).GetContacts()
 		for _, handle := range contactList {
@@ -307,7 +307,7 @@ func SendAppEvent(eventJson string) {
 		// Group Experiment Refresh
 		groupHandler, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 		if err == nil {
-			for _,profileOnion := range application.ListProfiles() {
+			for _, profileOnion := range application.ListProfiles() {
 				serverListForOnion := groupHandler.GetServerInfoList(application.GetPeer(profileOnion))
 				serversListBytes, _ := json.Marshal(serverListForOnion)
 				eventHandler.Push(event.NewEvent(groups.UpdateServerInfo, map[event.Field]string{"ProfileOnion": profileOnion, groups.ServerList: string(serversListBytes)}))
@@ -317,11 +317,11 @@ func SendAppEvent(eventJson string) {
 		// Explicitly toggle blocking/unblocking of unknown connections for profiles
 		// that have been loaded.
 		if utils.ReadGlobalSettings().BlockUnknownConnections {
-			for _,onion := range application.ListProfiles() {
+			for _, onion := range application.ListProfiles() {
 				application.GetPeer(onion).BlockUnknownConnections()
 			}
 		} else {
-			for _,onion := range application.ListProfiles() {
+			for _, onion := range application.ListProfiles() {
 				application.GetPeer(onion).AllowUnknownConnections()
 			}
 		}
@@ -870,7 +870,7 @@ func c_SetProfileAttribute(profile_ptr *C.char, profile_len C.int, key_ptr *C.ch
 func SetProfileAttribute(profileOnion string, key string, value string) {
 	profile := application.GetPeer(profileOnion)
 
-	zone,key := attr.ParseZone(key)
+	zone, key := attr.ParseZone(key)
 	if zone != attr.UnknownZone {
 		// TODO: We only allow Locally scoped attributes to be set here.
 		// To set a publicly scoped zone you need to write a dedicated handler/functionality
