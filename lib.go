@@ -61,9 +61,9 @@ type ChatMessage struct {
 
 //export c_StartCwtch
 func c_StartCwtch(dir_c *C.char, len C.int, tor_c *C.char, torLen C.int) C.int {
-	dir := C.GoStringN(dir_c, len)
-	tor := C.GoStringN(tor_c, torLen)
-	return C.int(StartCwtch(dir, tor))
+	applicationDirectory := C.GoStringN(dir_c, len)
+	torDirectory := C.GoStringN(tor_c, torLen)
+	return C.int(StartCwtch(applicationDirectory, torDirectory))
 }
 
 // StartCwtch starts cwtch in the library and initlaizes all data structures
@@ -75,8 +75,8 @@ func c_StartCwtch(dir_c *C.char, len C.int, tor_c *C.char, torLen C.int) C.int {
 func StartCwtch(appDir string, torPath string) int {
 	if logfile := os.Getenv("LOG_FILE"); logfile != "" {
 		filelog, err := log.NewFile(log.LevelInfo, logfile)
-		filelog.SetUseColor(false)
 		if err == nil {
+			filelog.SetUseColor(false)
 			log.SetStd(filelog)
 		} else {
 			// not so likely to be seen since we're usually creating file log in situations we can't access console logs...
@@ -139,7 +139,11 @@ func _startCwtch(appDir string, torPath string) {
 		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error creating appDir %v: %v", appDir, err)))
 		return
 	}
-	utils.InitGlobalSettingsFile(appDir, constants.DefactoPasswordForUnencryptedProfiles)
+
+	err = utils.InitGlobalSettingsFile(appDir, constants.DefactoPasswordForUnencryptedProfiles)
+	if err != nil {
+		log.Errorf("error initializing global settings file %. Global settings might not be loaded or saves", err)
+	}
 
 	log.Infof("Loading Cwtch Directory %v and tor path: %v", appDir, torPath)
 
@@ -155,8 +159,22 @@ func _startCwtch(appDir string, torPath string) {
 	}
 
 	log.Infof("making directory %v", appDir)
-	os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
-	tor.NewTorrc().WithSocksPort(port).WithOnionTrafficOnly().WithControlPort(controlPort).WithHashedPassword(base64.StdEncoding.EncodeToString(key)).Build(filepath.Join(appDir, "tor", "torrc"))
+	err = os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
+
+	if err != nil {
+		log.Errorf("error creating tor data directory: %v. Aborting app start up", err)
+		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
+		return
+	}
+
+	err = tor.NewTorrc().WithSocksPort(port).WithOnionTrafficOnly().WithControlPort(controlPort).WithHashedPassword(base64.StdEncoding.EncodeToString(key)).Build(filepath.Join(appDir, "tor", "torrc"))
+
+	if err != nil {
+		log.Errorf("error constructing torrc: %v", err)
+		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
+		return
+	}
+
 	acn, err := tor.NewTorACNWithAuth(appDir, torPath, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
 	if err != nil {
 		log.Errorf("Error connecting to Tor replacing with ErrorACN: %v\n", err)
@@ -212,14 +230,14 @@ func ReconnectCwtchForeground() {
 	}
 
 	// populate profile list
-	peerList := application.ListPeers()
-	for onion := range peerList {
+	peerList := application.ListProfiles()
+	for _, onion := range peerList {
 		eventHandler.Push(event.NewEvent(event.NewPeer, map[event.Field]string{event.Identity: onion, event.Created: event.False, "Reload": event.True}))
 	}
 
 	settings := utils.ReadGlobalSettings()
 
-	for profileOnion := range peerList {
+	for _, profileOnion := range peerList {
 		// fix peerpeercontact message counts
 		contactList := application.GetPeer(profileOnion).GetContacts()
 		for _, handle := range contactList {
@@ -289,7 +307,7 @@ func SendAppEvent(eventJson string) {
 		// Group Experiment Refresh
 		groupHandler, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 		if err == nil {
-			for profileOnion := range application.ListPeers() {
+			for _, profileOnion := range application.ListProfiles() {
 				serverListForOnion := groupHandler.GetServerInfoList(application.GetPeer(profileOnion))
 				serversListBytes, _ := json.Marshal(serverListForOnion)
 				eventHandler.Push(event.NewEvent(groups.UpdateServerInfo, map[event.Field]string{"ProfileOnion": profileOnion, groups.ServerList: string(serversListBytes)}))
@@ -299,18 +317,18 @@ func SendAppEvent(eventJson string) {
 		// Explicitly toggle blocking/unblocking of unknown connections for profiles
 		// that have been loaded.
 		if utils.ReadGlobalSettings().BlockUnknownConnections {
-			for onion := range application.ListPeers() {
+			for _, onion := range application.ListProfiles() {
 				application.GetPeer(onion).BlockUnknownConnections()
 			}
 		} else {
-			for onion := range application.ListPeers() {
+			for _, onion := range application.ListProfiles() {
 				application.GetPeer(onion).AllowUnknownConnections()
 			}
 		}
 
 	case utils.SetLoggingLevel:
 		_, warn := new_event.Data[utils.Warn]
-		_, error := new_event.Data[utils.Error]
+		_, err := new_event.Data[utils.Error]
 		_, debug := new_event.Data[utils.Debug]
 		_, info := new_event.Data[utils.Info]
 		// Assign logging level in priority order. The highest logging level wins in the
@@ -319,7 +337,7 @@ func SendAppEvent(eventJson string) {
 			log.SetLevel(log.LevelInfo)
 		} else if warn {
 			log.SetLevel(log.LevelWarn)
-		} else if error {
+		} else if err {
 			log.SetLevel(log.LevelError)
 		} else if debug {
 			log.SetLevel(log.LevelDebug)
@@ -366,7 +384,7 @@ func SendProfileEvent(onion string, eventJson string) {
 		eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: err.Error()}))
 	// DEPRECATED: use SetProfileAttribute()
 	case event.SetAttribute:
-		peer.SetAttribute(new_event.Data[event.Key], new_event.Data[event.Data])
+		log.Errorf("SetAttribute is deprecated.")
 	// DEPRECATED: use SetContactAttribute()
 	case event.SetPeerAttribute:
 		peer.SetContactAttribute(new_event.Data[event.RemotePeer], new_event.Data[event.Key], new_event.Data[event.Data])
@@ -403,12 +421,6 @@ func GetAppBusEvent() string {
 		json = eventHandler.GetNextEvent()
 	}
 	return json
-}
-
-type Profile struct {
-	Name      string `json:"name"`
-	Onion     string `json:"onion"`
-	ImagePath string `json:"imagePath"`
 }
 
 //export c_CreateProfile
@@ -672,17 +684,20 @@ func SendInvitation(profileOnion, handle, target string) {
 func c_ShareFile(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, filepath_ptr *C.char, filepath_len C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	handle := C.GoStringN(handle_ptr, handle_len)
-	filepath := C.GoStringN(filepath_ptr, filepath_len)
-	ShareFile(profile, handle, filepath)
+	sharefilepath := C.GoStringN(filepath_ptr, filepath_len)
+	ShareFile(profile, handle, sharefilepath)
 }
 
-func ShareFile(profileOnion, handle, filepath string) {
+func ShareFile(profileOnion, handle, sharefilepath string) {
 	profile := application.GetPeer(profileOnion)
 	fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
 	if err != nil {
 		log.Errorf("file sharing error: %v", err)
 	} else {
-		fh.ShareFile(filepath, profile, handle)
+		err = fh.ShareFile(sharefilepath, profile, handle)
+		if err != nil {
+			log.Errorf("error sharing file: %v", err)
+		}
 	}
 }
 
@@ -690,10 +705,10 @@ func ShareFile(profileOnion, handle, filepath string) {
 func c_DownloadFile(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, filepath_ptr *C.char, filepath_len C.int, manifestpath_ptr *C.char, manifestpath_len C.int, filekey_ptr *C.char, filekey_len C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	handle := C.GoStringN(handle_ptr, handle_len)
-	filepath := C.GoStringN(filepath_ptr, filepath_len)
+	downloadfilepath := C.GoStringN(filepath_ptr, filepath_len)
 	manifestpath := C.GoStringN(manifestpath_ptr, manifestpath_len)
 	filekey := C.GoStringN(filekey_ptr, filekey_len)
-	DownloadFile(profile, handle, filepath, manifestpath, filekey)
+	DownloadFile(profile, handle, downloadfilepath, manifestpath, filekey)
 }
 
 func DownloadFile(profileOnion, handle, filepath, manifestpath, filekey string) {
@@ -713,7 +728,7 @@ func c_CheckDownloadStatus(profilePtr *C.char, profileLen C.int, fileKeyPtr *C.c
 
 func CheckDownloadStatus(profileOnion, fileKey string) {
 	profile := application.GetPeer(profileOnion)
-	if path, exists := profile.GetAttribute(attr.GetLocalScope(fileKey)); exists {
+	if path, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fileKey); exists {
 		eventHandler.Push(event.NewEvent(event.FileDownloaded, map[event.Field]string{
 			ProfileOnion:   profileOnion,
 			event.FileKey:  fileKey,
@@ -741,17 +756,17 @@ func c_CreateGroup(profile_ptr *C.char, profile_len C.int, server_ptr *C.char, s
 }
 
 // CreateGroup takes in a profile and server in addition to a name and creates a new group.
-func CreateGroup(profile string, server string, name string) {
-	peer := application.GetPeer(profile)
+func CreateGroup(profileHandle string, server string, name string) {
+	profile := application.GetPeer(profileHandle)
 	_, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 	if err == nil {
-		gid, _, err := peer.StartGroup(server)
+		gid, _, err := profile.StartGroup(server)
 		if err == nil {
-			log.Debugf("created group %v on %v: $v", profile, server, gid)
+			log.Debugf("created group %v on %v: $v", profileHandle, server, gid)
 			// set the group name
-			peer.SetGroupAttribute(gid, attr.GetLocalScope("name"), name)
+			profile.SetGroupAttribute(gid, attr.GetLocalScope("name"), name)
 		} else {
-			log.Errorf("error creating group or %v on server %v: %v", profile, server, err)
+			log.Errorf("error creating group or %v on server %v: %v", profileHandle, server, err)
 		}
 	}
 }
@@ -775,20 +790,20 @@ func DeleteProfile(profile string, password string) {
 }
 
 //export c_ArchiveConversation
-func c_ArchiveConversation(profile_ptr *C.char, profile_len C.int, contact_ptr *C.char, contact_len C.int) {
+func c_ArchiveConversation(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
-	contact := C.GoStringN(contact_ptr, contact_len)
-	ArchiveConversation(profile, contact)
+	handle := C.GoStringN(handle_ptr, handle_len)
+	ArchiveConversation(profile, handle)
 }
 
 // ArchiveConversation sets the conversation to archived
-func ArchiveConversation(profile string, handle string) {
-	peer := application.GetPeer(profile)
-	ph := utils.NewPeerHelper(peer)
+func ArchiveConversation(profileHandle string, handle string) {
+	profile := application.GetPeer(profileHandle)
+	ph := utils.NewPeerHelper(profile)
 	if ph.IsGroup(handle) {
-		peer.SetGroupAttribute(handle, attr.GetLocalScope(constants.Archived), event.True)
+		profile.SetGroupAttribute(handle, attr.GetLocalScope(constants.Archived), event.True)
 	} else {
-		peer.SetContactAttribute(handle, attr.GetLocalScope(constants.Archived), event.True)
+		profile.SetContactAttribute(handle, attr.GetLocalScope(constants.Archived), event.True)
 	}
 }
 
@@ -800,16 +815,16 @@ func c_DeleteContact(profile_ptr *C.char, profile_len C.int, hanlde_ptr *C.char,
 }
 
 // DeleteContact removes all trace of the contact from the profile
-func DeleteContact(profile string, handle string) {
-	peer := application.GetPeer(profile)
-	ph := utils.NewPeerHelper(peer)
+func DeleteContact(profileHandle string, handle string) {
+	profile := application.GetPeer(profileHandle)
+	ph := utils.NewPeerHelper(profile)
 	if ph.IsGroup(handle) {
 		_, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 		if err == nil {
-			peer.DeleteGroup(handle)
+			profile.DeleteGroup(handle)
 		}
 	} else {
-		peer.DeleteContact(handle)
+		profile.DeleteContact(handle)
 	}
 }
 
@@ -850,10 +865,23 @@ func c_SetProfileAttribute(profile_ptr *C.char, profile_len C.int, key_ptr *C.ch
 	SetProfileAttribute(profileOnion, key, value)
 }
 
-// SetProfileAttribute provides a wrapper around profile.SetAttribute
+// SetProfileAttribute provides a wrapper around profile.SetScopedZonedAttribute
+// WARNING: Because this function is potentially dangerous all keys and zones must be added
+// explicitly. If you are attempting to added behaviour to the UI that requires the existence of new keys
+// you probably want to be building out functionality/subsystem in the UI itself.
+// Key must have the format zone.key where Zone is defined in Cwtch. Unknown zones are not permitted.
 func SetProfileAttribute(profileOnion string, key string, value string) {
 	profile := application.GetPeer(profileOnion)
-	profile.SetAttribute(key, value)
+
+	zone, key := attr.ParseZone(key)
+
+	// TODO We only allow public.profile.zone to be set for now.
+	// All other scopes and zones need to be added explicitly or handled by Cwtch.
+	if zone == attr.ProfileZone && key == constants.Name {
+		profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name, value)
+	} else {
+		log.Errorf("attempted to set an attribute with an unknown zone: %v", key)
+	}
 }
 
 //export c_SetContactAttribute
