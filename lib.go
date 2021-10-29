@@ -213,6 +213,8 @@ func _startCwtch(appDir string, torPath string) {
 
 	newApp.LoadProfiles(constants.DefactoPasswordForUnencryptedProfiles)
 	application = newApp
+	LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
+	LaunchServers()
 
 	// Send global settings to the UI...
 	application.GetPrimaryBus().Publish(event.NewEvent(utils.UpdateGlobalSettings, map[event.Field]string{event.Data: string(settingsJson)}))
@@ -273,7 +275,15 @@ func ReconnectCwtchForeground() {
 			serversListBytes, _ := json.Marshal(serverListForOnion)
 			eventHandler.Push(event.NewEvent(groups.UpdateServerInfo, map[event.Field]string{"ProfileOnion": profileOnion, groups.ServerList: string(serversListBytes)}))
 		}
+	}
 
+	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+	if err == nil {
+		serversList := serversHandler.ListServers()
+		for _, server := range serversList {
+			json := serversHandler.SeverToJson(server)
+			application.GetPrimaryBus().Publish(event.NewEventList(servers.NewServer, event.Data, json))
+		}
 	}
 
 	settingsJson, _ := json.Marshal(settings)
@@ -314,8 +324,9 @@ func SendAppEvent(eventJson string) {
 
 		serverHandler, err := servers.ExperimentGate(settings.Experiments)
 		if err == nil {
+			servers.InitServers(globalACN, globalAppDir)
 			serverHandler.LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
-			serverHandler.LaunchServers()
+			LaunchServers()
 		} else {
 			servers.DeactivateServers()
 		}
@@ -973,6 +984,7 @@ func LoadServers(password string) {
 		} else {
 			for _, serverOnion := range serversList {
 				json := serversHandler.SeverToJson(serverOnion)
+				log.Debugf("Load Server NewServer event: %s", json)
 				application.GetPrimaryBus().Publish(event.NewEventList(servers.NewServer, event.Data, json))
 			}
 		}
@@ -980,18 +992,31 @@ func LoadServers(password string) {
 }
 
 //export c_CreateServer
-func c_CreateServer(passwordPtr *C.char, passwordLen C.int) {
-	CreateServer(C.GoStringN(passwordPtr, passwordLen))
+func c_CreateServer(passwordPtr *C.char, passwordLen C.int, descPtr *C.char, descLen C.int, autostart C.char) {
+	CreateServer(C.GoStringN(passwordPtr, passwordLen), C.GoStringN(descPtr, descLen), autostart == 1)
 }
 
-func CreateServer(password string) {
+func CreateServer(password string, description string, autostart bool) {
 	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 	if err == nil {
-		server, err := serversHandler.CreateServer(password)
+		s, err := serversHandler.CreateServer(password)
 		if err != nil {
 			log.Errorf("Could not create new server: %s\n", err)
 		} else {
-			json := serversHandler.SeverToJson(server.Onion())
+			s.SetAttribute(server.AttrDescription, description)
+			if autostart {
+				s.SetAttribute(server.AttrAutostart, "true")
+				LaunchServer(s.Onion())
+			} else {
+				s.SetAttribute(server.AttrAutostart, "false")
+			}
+			if password == constants.DefactoPasswordForUnencryptedProfiles {
+				s.SetAttribute(server.AttrStorageType, server.StorageTypeDefaultPassword)
+			} else {
+				s.SetAttribute(server.AttrStorageType, server.StorageTypePassword)
+			}
+			json := serversHandler.SeverToJson(s.Onion())
+			log.Debugf("Creating Server NewServer event: %s", json)
 			application.GetPrimaryBus().Publish(event.NewEventList(servers.NewServer, event.Data, json))
 		}
 	}
@@ -1069,6 +1094,21 @@ func ShutdownServers() {
 	if err == nil {
 		for _, onion := range serversHandler.ListServers() {
 			ShutdownServer(onion)
+		}
+	}
+}
+
+//export c_SetServerAttribute
+func c_SetServerAttribute(onionPtr *C.char, onionLen C.int, keyPtr *C.char, keyLen C.int, valPtr *C.char, valLen C.int) {
+	SetServerAttribute(C.GoStringN(onionPtr, onionLen), C.GoStringN(keyPtr, keyLen), C.GoStringN(valPtr, valLen))
+}
+
+func SetServerAttribute(onion string, key string, val string) {
+	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+	if err == nil {
+		server := serversHandler.GetServer(onion)
+		if server != nil {
+			server.SetAttribute(key, val)
 		}
 	}
 }
