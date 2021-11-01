@@ -255,7 +255,7 @@ func ReconnectCwtchForeground() {
 			// fix peergroupcontact message counts
 			groupList := application.GetPeer(profileOnion).GetGroups()
 			for _, groupID := range groupList {
-				totalMessages := application.GetPeer(profileOnion).GetGroup(groupID).Timeline.Len() + len(application.GetPeer(profileOnion).GetGroup(groupID).UnacknowledgedMessages)
+				totalMessages := len(application.GetPeer(profileOnion).GetGroup(groupID).GetTimeline())
 				eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
 					event.Identity: profileOnion,
 					event.GroupID:  groupID,
@@ -537,7 +537,7 @@ type EnhancedMessage struct {
 	ContactImage string
 }
 
-func GetMessage(profileOnion, handle string, message_index int) string {
+func GetMessage(profileOnion, handle string, messageIndex int) string {
 	var message EnhancedMessage
 	// There is an edge case that can happen on Android when the app is shutdown while fetching messages...
 	// The worker threads that are spawned can become activated again when the app is opened attempt to finish their job...
@@ -549,28 +549,25 @@ func GetMessage(profileOnion, handle string, message_index int) string {
 		ph := utils.NewPeerHelper(profile)
 		if ph.IsGroup(handle) {
 			if profile.GetGroup(handle) != nil {
-				// If we are safely within the limits of the timeline just grab the message at the index..
-				if len(profile.GetGroup(handle).Timeline.Messages) > message_index {
-					message.Message = profile.GetGroup(handle).Timeline.Messages[message_index]
+
+				exists, timelineMessage, length := profile.GetGroup(handle).GetMessage(messageIndex)
+				if exists {
+					message.Message = timelineMessage
 					message.ContactImage = ph.GetProfilePic(message.Message.PeerID)
 				} else {
-					// Message Index Request exceeded Timeline, most likely reason is this is a request for an
-					// unacknowledged sent message (it can take a many seconds for a message to be confirmed in the worst
-					// case).
-					offset := message_index - len(profile.GetGroup(handle).Timeline.Messages)
-					if len(profile.GetGroup(handle).UnacknowledgedMessages) > offset {
-						message.Message = profile.GetGroup(handle).UnacknowledgedMessages[offset]
-						message.ContactImage = ph.GetProfilePic(message.Message.PeerID)
-					} else {
-						log.Errorf("Couldn't find message in timeline or unacked messages, probably transient threading issue, but logging for visibility..")
-					}
+					eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
+						event.Identity:   profileOnion,
+						event.GroupID: handle,
+						event.Data:   strconv.Itoa(length),
+					}))
+					log.Errorf("Couldn't find message in timeline %v / %v or unacked messages, probably transient threading issue, but logging for visibility..", messageIndex, length)
 				}
 			}
 		} else {
 			if profile.GetContact(handle) != nil {
 				// If we are safely within the limits of the timeline just grab the message at the index..
-				if len(profile.GetContact(handle).Timeline.Messages) > message_index {
-					message.Message = profile.GetContact(handle).Timeline.Messages[message_index]
+				if len(profile.GetContact(handle).Timeline.Messages) > messageIndex {
+					message.Message = profile.GetContact(handle).Timeline.Messages[messageIndex]
 					message.ContactImage = ph.GetProfilePic(handle)
 				} else {
 					// Otherwise Send a counter resync event...this shouldn't really happen for p2p messages so we
