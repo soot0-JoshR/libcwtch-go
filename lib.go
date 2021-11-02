@@ -995,6 +995,9 @@ func LoadServers(password string) {
 				ev := event.NewEvent(servers.NewServer, make(map[event.Field]string))
 				serverInfo.EnrichEvent(&ev)
 				application.GetPrimaryBus().Publish(ev)
+				if serverInfo.Autostart {
+					LaunchServer(serverOnion)
+				}
 			}
 		}
 	}
