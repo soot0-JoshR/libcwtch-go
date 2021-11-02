@@ -3,6 +3,7 @@ package servers
 import (
 	"cwtch.im/cwtch/event"
 	"fmt"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/server"
 	"git.openprivacy.ca/openprivacy/connectivity"
 	"path"
@@ -43,11 +44,16 @@ func InitServers(acn connectivity.ACN, appdir string) {
 	defer lock.Unlock()
 	if appServers == nil {
 		appServers = server.NewServers(acn, path.Join(appdir, "servers"))
+		appServers.LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
 	}
 }
 
 func DeactivateServers() {
-	appServers.Stop()
+	lock.Lock()
+	defer lock.Unlock()
+	if appServers == nil {
+		appServers.Stop()
+	}
 }
 
 // ServersFunctionality provides experiment gated server functionality

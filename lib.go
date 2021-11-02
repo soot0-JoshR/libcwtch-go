@@ -214,7 +214,7 @@ func _startCwtch(appDir string, torPath string) {
 
 	newApp.LoadProfiles(constants.DefactoPasswordForUnencryptedProfiles)
 	application = newApp
-	LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
+	publishLoadedServers()
 	LaunchServers()
 
 	// Send global settings to the UI...
@@ -278,6 +278,16 @@ func ReconnectCwtchForeground() {
 		}
 	}
 
+	publishLoadedServers()
+
+	settingsJson, _ := json.Marshal(settings)
+	application.GetPrimaryBus().Publish(event.NewEvent(utils.UpdateGlobalSettings, map[event.Field]string{event.Data: string(settingsJson)}))
+	application.GetPrimaryBus().Publish(event.NewEvent(utils.CwtchStarted, map[event.Field]string{}))
+	application.QueryACNStatus()
+	application.QueryACNVersion()
+}
+
+func publishLoadedServers() {
 	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 	if err == nil {
 		serversList := serversHandler.ListServers()
@@ -288,12 +298,6 @@ func ReconnectCwtchForeground() {
 			application.GetPrimaryBus().Publish(ev)
 		}
 	}
-
-	settingsJson, _ := json.Marshal(settings)
-	application.GetPrimaryBus().Publish(event.NewEvent(utils.UpdateGlobalSettings, map[event.Field]string{event.Data: string(settingsJson)}))
-	application.GetPrimaryBus().Publish(event.NewEvent(utils.CwtchStarted, map[event.Field]string{}))
-	application.QueryACNStatus()
-	application.QueryACNVersion()
 }
 
 //export c_SendAppEvent
@@ -325,10 +329,10 @@ func SendAppEvent(eventJson string) {
 
 		settings := utils.ReadGlobalSettings()
 
-		serverHandler, err := servers.ExperimentGate(settings.Experiments)
+		_, err = servers.ExperimentGate(settings.Experiments)
 		if err == nil {
 			servers.InitServers(globalACN, globalAppDir)
-			serverHandler.LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
+			publishLoadedServers()
 			LaunchServers()
 		} else {
 			servers.DeactivateServers()
