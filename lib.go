@@ -713,12 +713,19 @@ func c_CheckDownloadStatus(profilePtr *C.char, profileLen C.int, fileKeyPtr *C.c
 
 func CheckDownloadStatus(profileOnion, fileKey string) {
 	profile := application.GetPeer(profileOnion)
-	if path, exists := profile.GetAttribute(attr.GetLocalScope(fileKey)); exists {
+	if path, exists := profile.GetAttribute(attr.GetLocalScope(fmt.Sprintf("%s.complete", fileKey))); exists {
 		eventHandler.Push(event.NewEvent(event.FileDownloaded, map[event.Field]string{
 			ProfileOnion:   profileOnion,
 			event.FileKey:  fileKey,
 			event.FilePath: path,
 			event.TempFile: "",
+		}))
+	} else if path, exists = profile.GetAttribute(attr.GetLocalScope(fmt.Sprintf("%s.path", fileKey))); exists {
+		eventHandler.Push(event.NewEvent(event.FileDownloadProgressUpdate, map[event.Field]string{
+			ProfileOnion:  profileOnion,
+			event.FileKey: fileKey,
+			event.Progress: ??,
+			event.FileSizeInChunks: ??,
 		}))
 	}
 }
