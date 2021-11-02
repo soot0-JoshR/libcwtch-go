@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	constants2 "git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
 	"git.openprivacy.ca/openprivacy/log"
 	"strconv"
 )
@@ -49,6 +50,8 @@ func (eh *EventHandler) HandleApp(application app.Application) {
 	application.GetPrimaryBus().Subscribe(event.ACNVersion, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(UpdateGlobalSettings, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(CwtchStarted, eh.appBusQueue)
+	application.GetPrimaryBus().Subscribe(servers.NewServer, eh.appBusQueue)
+	application.GetPrimaryBus().Subscribe(servers.ServerIntentUpdate, eh.appBusQueue)
 }
 
 func (eh *EventHandler) GetNextEvent() string {
