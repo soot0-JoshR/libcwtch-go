@@ -22,8 +22,11 @@ func FunctionalityGate(experimentMap map[string]bool) (*Functionality, error) {
 
 // SendMessage handles sending messages to contacts
 func (pf *Functionality) SendMessage(peer peer.SendMessages, handle string, message string) features.Response {
-	eventID := peer.SendMessageToPeer(handle, message)
-	return features.ConstructResponse(sendMessagePrefix, eventID)
+	err := peer.SendMessage(handle, message)
+	if err == nil {
+		return features.ConstructResponse(sendMessagePrefix, "success")
+	}
+	return features.ConstructResponse(sendMessagePrefix, err.Error())
 }
 
 // HandleImportString handles contact import strings

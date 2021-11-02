@@ -114,7 +114,7 @@ func (p *PeerHelper) GetNick(id string) string {
 				// re-request if authenticated
 				// TODO: This check probably doesn't belong here...
 				if contact := p.peer.GetContact(id); contact != nil && contact.State == connections.ConnectionStateName[connections.AUTHENTICATED] {
-					p.peer.SendGetValToPeer(id, attr.PublicScope, constants.Name)
+					p.peer.SendScopedZonedGetValToContact(id, attr.PublicScope, attr.ProfileZone, constants.Name)
 				}
 			}
 		}
@@ -202,74 +202,6 @@ func getLastMessageTime(tl *model.Timeline) int {
 	return int(tl.Messages[len(tl.Messages)-1].Timestamp.Unix())
 }
 
-/*
-// AddProfile adds a new profile to the UI
-func AddProfile(gcd *GrandCentralDispatcher, handle string) {
-	p := the.CwtchApp.GetPeer(handle)
-	if p != nil {
-		nick, exists := p.GetAttribute(attr.GetPublicScope(constants.Name))
-		if !exists {
-			nick = handle
-		}
-
-		picVal, ok := p.GetAttribute(attr.GetPublicScope(constants.Picture))
-		if !ok {
-			picVal = ImageToString(NewImage(RandomProfileImage(handle), TypeImageDistro))
-		}
-		pic, err := StringToImage(picVal)
-		if err != nil {
-			pic = NewImage(RandomProfileImage(handle), TypeImageDistro)
-		}
-		picPath := getPicturePath(pic)
-
-		tag, _ := p.GetAttribute(app.AttributeTag)
-
-		online, _ := p.GetAttribute(attr.GetLocalScope(constants.PeerOnline))
-
-		log.Debugf("AddProfile %v %v %v %v %v\n", handle, nick, picPath, tag, online)
-		gcd.AddProfile(handle, nick, picPath, tag, online == event.True)
-	}
-}*/
-/*
-type manager struct {
-	gcd     *GrandCentralDispatcher
-	profile string
-}
-
-// Manager is a middleware helper for entities like peer event listeners wishing to trigger ui changes (via the gcd)
-//   each manager is for one profile/peer
-//   manager takes minimal arguments and builds the full struct of data (usually pulled from a cwtch peer) required to call the GCD to perform the ui action
-//   manager also performs call filtering based on UI state: users of manager can safely always call it on events and not have to worry about weather the relevant ui is active
-//   ie: you can always safely call AddMessage even if in the ui a different profile is selected. manager will check with gcd, and if the correct conditions are not met, it will not call on gcd to update the ui incorrectly
-type Manager interface {
-	Acknowledge(handle, mID string)
-	AddContact(Handle string)
-	AddSendMessageError(peer string, signature string, err string)
-	AddMessage(handle string, from string, message string, fromMe bool, messageID string, timestamp time.Time, Acknowledged bool)
-
-	ReloadProfiles()
-
-	UpdateContactDisplayName(handle string)
-	UpdateContactPicture(handle string)
-	UpdateContactStatus(handle string, status int, loading bool)
-	UpdateContactAttribute(handle, key, value string)
-
-	ChangePasswordResponse(error bool)
-
-	AboutToAddMessage()
-	MessageJustAdded()
-	StoreAndNotify(peer.CwtchPeer, string, string, time.Time, string)
-
-	UpdateNetworkStatus(online bool)
-}
-
-// NewManager returns a new Manager interface for a profile to the gcd
-func NewManager(profile string, gcd *GrandCentralDispatcher) Manager {
-	return &manager{gcd: gcd, profile: profile}
-}
-
-
-*/
 // EnrichNewPeer populates required data for use by frontend
 //   uiManager.AddContact(onion)
 //   (handle string, displayName string, image string, badge int, status int, authorization string, loading bool, lastMsgTime int)
@@ -317,79 +249,3 @@ func EnrichNewPeer(handle string, ph *PeerHelper, ev *EventProfileEnvelope) erro
 	}
 	return nil
 }
-
-/*
-// AddSendMessageError adds an error not and icon to a message in a conversation in the ui for the message identified by the peer/sig combo
-func (this *manager) AddSendMessageError(peer string, signature string, err string) {
-	this.gcd.DoIfProfile(this.profile, func() {
-		this.gcd.DoIfConversation(peer, func() {
-			log.Debugf("Received Error Sending Message: %v", err)
-			// FIXME: Sometimes, for the first Peer message we send our error beats our message to the UI
-			time.Sleep(time.Second * 1)
-			this.gcd.GroupSendError(signature, err)
-		})
-	})
-}
-
-func (this *manager) AboutToAddMessage() {
-	this.gcd.TimelineInterface.AddMessage(this.gcd.TimelineInterface.num())
-}
-
-func (this *manager) MessageJustAdded() {
-	this.gcd.TimelineInterface.RequestEIR()
-}*/
-
-/*
-// AddMessage adds a message to the message pane for the supplied conversation if it is active
-func (this *manager) AddMessage(handle string, from string, message string, fromMe bool, messageID string, timestamp time.Time, Acknowledged bool) {
-	this.gcd.DoIfProfile(this.profile, func() {
-		this.gcd.DoIfConversation(handle, func() {
-			updateLastReadTime(handle)
-			// If the message is not from the user then add it, otherwise, just acknowledge.
-			if !fromMe || !Acknowledged {
-				this.gcd.TimelineInterface.AddMessage(this.gcd.TimelineInterface.num() - 1)
-				this.gcd.TimelineInterface.RequestEIR()
-			} else {
-				this.gcd.Acknowledged(messageID)
-			}
-		})
-		this.gcd.IncContactUnreadCount(handle)
-	})
-	if !fromMe {
-		this.gcd.Notify(handle)
-	}
-}
-
-func (this *manager) ReloadProfiles() {
-	this.gcd.reloadProfileList()
-}
-
-// UpdateContactDisplayName updates a contact's display name in the contact list and conversations
-func (this *manager) UpdateContactDisplayName(handle string) {
-	this.gcd.DoIfProfile(this.profile, func() {
-		this.gcd.UpdateContactDisplayName(handle, GetNick(handle))
-	})
-}
-
-// UpdateContactPicture updates a contact's picture in the contact list and conversations
-func (this *manager) UpdateContactPicture(handle string) {
-	this.gcd.DoIfProfile(this.profile, func() {
-		this.gcd.UpdateContactPicture(handle, GetProfilePic(handle))
-	})
-}
-
-// UpdateContactAttribute update's a contacts attribute in the ui
-func (this *manager) UpdateContactAttribute(handle, key, value string) {
-	this.gcd.DoIfProfile(this.profile, func() {
-		this.gcd.UpdateContactAttribute(handle, key, value)
-	})
-}
-
-func (this *manager) ChangePasswordResponse(error bool) {
-	this.gcd.ChangePasswordResponse(error)
-}
-
-func (this *manager) UpdateNetworkStatus(online bool) {
-	this.gcd.UpdateProfileNetworkStatus(this.profile, online)
-}
-*/
