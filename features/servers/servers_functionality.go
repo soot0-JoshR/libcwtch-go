@@ -2,13 +2,12 @@ package servers
 
 import (
 	"cwtch.im/cwtch/event"
-	"encoding/json"
 	"fmt"
+	"git.openprivacy.ca/cwtch.im/server"
 	"git.openprivacy.ca/openprivacy/connectivity"
 	"path"
 	"sync"
 )
-import "git.openprivacy.ca/cwtch.im/server"
 
 const serversExperiment = "servers-experiment"
 
@@ -23,9 +22,18 @@ const (
 )
 
 const (
-	IntentEnabled = "enabled"
-	IntentDisabled = "disabled"
+	IntentRunning = "running"
+	IntentStopped = "stopped"
 )
+
+type ServerInfo struct {
+	Onion string
+	ServerBundle string
+	Autostart bool
+	Running bool
+	Description string
+	StorageType string
+}
 
 var lock sync.Mutex
 var appServers server.Servers
@@ -39,7 +47,7 @@ func InitServers(acn connectivity.ACN, appdir string) {
 }
 
 func DeactivateServers() {
-	appServers.Shutdown()
+	appServers.Stop()
 }
 
 // ServersFunctionality provides experiment gated server functionality
@@ -80,19 +88,40 @@ func (sf *ServersFunctionality) LaunchServer(onion string) {
 	appServers.LaunchServer(onion)
 }
 
-func (sf *ServersFunctionality) ShutdownServer(onion string) {
-	appServers.ShutdownServer(onion)
+func (sf *ServersFunctionality) StopServer(onion string) {
+	appServers.StopServer(onion)
 }
 
-func (sf *ServersFunctionality) SeverToJson(onion string) string {
+func (sf *ServersFunctionality) DestroyServers() {
+	appServers.Destroy()
+}
+
+func (sf *ServersFunctionality) GetServerInfo(onion string) *ServerInfo {
 	s := sf.GetServer(onion)
-	hash := make(map[string]string)
-	hash["onion"] = s.Onion()
-	hash["serverbundle"] = s.ServerBundle()
-	hash[server.AttrAutostart] = s.GetAttribute(server.AttrAutostart)
-	hash[server.AttrEnabled] = s.GetAttribute(server.AttrEnabled)
-	hash[server.AttrDescription] = s.GetAttribute(server.AttrDescription)
-	hash[server.AttrStorageType] = s.GetAttribute(server.AttrStorageType)
-	json, _ := json.Marshal(hash)
-	return string(json)
+	var serverInfo ServerInfo
+	serverInfo.Onion = s.Onion()
+	serverInfo.ServerBundle = s.ServerBundle()
+	serverInfo.Autostart = s.GetAttribute(server.AttrAutostart) == "true"
+	running, _ := s.CheckStatus()
+	serverInfo.Running = running
+	serverInfo.Description = s.GetAttribute(server.AttrDescription)
+	serverInfo.StorageType = s.GetAttribute(server.AttrStorageType)
+	return &serverInfo
+}
+
+func (si *ServerInfo) EnrichEvent(e *event.Event) {
+	e.Data["Onion"] = si.Onion
+	e.Data["ServerBundle"] = si.ServerBundle
+	e.Data["Description"] = si.Description
+	e.Data["StorageType"] = si.StorageType
+	if si.Autostart {
+		e.Data["Autostart"] = "true"
+	} else {
+		e.Data["Autostart"] = "false"
+	}
+	if si.Running {
+		e.Data["Running"] = "true"
+	} else {
+		e.Data["Running"] = "false"
+	}
 }

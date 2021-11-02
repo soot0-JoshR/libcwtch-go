@@ -16,18 +16,18 @@ import (
 	"strings"
 	"unsafe"
 
-	"git.openprivacy.ca/openprivacy/connectivity"
 	"cwtch.im/cwtch/app"
 	"cwtch.im/cwtch/event"
 	"cwtch.im/cwtch/functionality/filesharing"
 	"cwtch.im/cwtch/model"
 	"cwtch.im/cwtch/model/attr"
 	"cwtch.im/cwtch/peer"
-	"git.openprivacy.ca/cwtch.im/server"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	contact "git.openprivacy.ca/cwtch.im/libcwtch-go/features/contacts"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
+	"git.openprivacy.ca/cwtch.im/server"
+	"git.openprivacy.ca/openprivacy/connectivity"
 
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/utils"
 
@@ -282,8 +282,10 @@ func ReconnectCwtchForeground() {
 	if err == nil {
 		serversList := serversHandler.ListServers()
 		for _, server := range serversList {
-			json := serversHandler.SeverToJson(server)
-			application.GetPrimaryBus().Publish(event.NewEventList(servers.NewServer, event.Data, json))
+			serverInfo := serversHandler.GetServerInfo(server)
+			ev := event.NewEvent(servers.NewServer, make(map[event.Field]string))
+			serverInfo.EnrichEvent(&ev)
+			application.GetPrimaryBus().Publish(ev)
 		}
 	}
 
@@ -984,9 +986,11 @@ func LoadServers(password string) {
 			application.GetPrimaryBus().Publish(event.NewEventList(servers.ZeroServersLoaded))
 		} else {
 			for _, serverOnion := range serversList {
-				json := serversHandler.SeverToJson(serverOnion)
-				log.Debugf("Load Server NewServer event: %s", json)
-				application.GetPrimaryBus().Publish(event.NewEventList(servers.NewServer, event.Data, json))
+				serverInfo := serversHandler.GetServerInfo(serverOnion)
+				log.Debugf("Load Server NewServer event: %s", serverInfo)
+				ev := event.NewEvent(servers.NewServer, make(map[event.Field]string))
+				serverInfo.EnrichEvent(&ev)
+				application.GetPrimaryBus().Publish(ev)
 			}
 		}
 	}
@@ -1016,9 +1020,11 @@ func CreateServer(password string, description string, autostart bool) {
 			} else {
 				s.SetAttribute(server.AttrStorageType, server.StorageTypePassword)
 			}
-			json := serversHandler.SeverToJson(s.Onion())
-			log.Debugf("Creating Server NewServer event: %s", json)
-			application.GetPrimaryBus().Publish(event.NewEventList(servers.NewServer, event.Data, json))
+			serverInfo := serversHandler.GetServerInfo(s.Onion())
+			log.Debugf("Creating Server NewServer event: %s", serverInfo)
+			ev := event.NewEvent(servers.NewServer, make(map[event.Field]string))
+			serverInfo.EnrichEvent(&ev)
+			application.GetPrimaryBus().Publish(ev)
 		}
 	}
 }
@@ -1031,10 +1037,10 @@ func c_DeleteServer(onionPtr *C.char, onionLen C.int, currentPasswordPtr *C.char
 func DeleteServer(onion string, currentPassword string) {
 	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 	if err == nil {
-		serversHandler.ShutdownServer(onion)
-		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, servers.Intent, servers.IntentDisabled))
+		serversHandler.StopServer(onion)
+		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, event.Identity, onion, servers.Intent, servers.IntentStopped))
 		serversHandler.DeleteServer(onion, currentPassword)
-		// TODO HANDLE err from DeletServer?
+		// TODO HANDLE err from DeleteServer?
 	}
 }
 
@@ -1067,35 +1073,47 @@ func LaunchServer(onion string) {
 	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 	if err == nil {
 		serversHandler.LaunchServer(onion)
-		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, servers.Intent, servers.IntentEnabled))
+		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, event.Identity, onion, servers.Intent, servers.IntentRunning))
 	}
 }
 
 
-//export c_ShutdownServer
-func c_ShutdownServer(onionPtr *C.char, onionLen C.int) {
-	ShutdownServer(C.GoStringN(onionPtr, onionLen))
+//export c_StopServer
+func c_StopServer(onionPtr *C.char, onionLen C.int) {
+	StopServer(C.GoStringN(onionPtr, onionLen))
 }
 
-func ShutdownServer(onion string) {
+func StopServer(onion string) {
 	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 	if err == nil {
-		serversHandler.ShutdownServer(onion)
-		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, servers.Intent, servers.IntentDisabled))
+		serversHandler.StopServer(onion)
+		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, event.Identity, onion, servers.Intent, servers.IntentStopped))
 	}
 }
 
-//export c_ShutdownServers
-func c_ShutdownServers() {
-	ShutdownServers()
+//export c_StopServers
+func c_StopServers() {
+	StopServers()
 }
 
-func ShutdownServers() {
+func StopServers() {
 	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 	if err == nil {
 		for _, onion := range serversHandler.ListServers() {
-			ShutdownServer(onion)
+			StopServer(onion)
 		}
+	}
+}
+
+//export c_DestroyServers
+func c_DestroyServers() {
+	DestroyServers()
+}
+
+func DestroyServers() {
+	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+	if err == nil {
+		serversHandler.DestroyServers()
 	}
 }
 

@@ -51,6 +51,7 @@ func (eh *EventHandler) HandleApp(application app.Application) {
 	application.GetPrimaryBus().Subscribe(UpdateGlobalSettings, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(CwtchStarted, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(servers.NewServer, eh.appBusQueue)
+	application.GetPrimaryBus().Subscribe(servers.ServerIntentUpdate, eh.appBusQueue)
 }
 
 func (eh *EventHandler) GetNextEvent() string {
