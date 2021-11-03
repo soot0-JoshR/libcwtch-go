@@ -51,7 +51,7 @@ func InitServers(acn connectivity.ACN, appdir string) {
 func DeactivateServers() {
 	lock.Lock()
 	defer lock.Unlock()
-	if appServers == nil {
+	if appServers != nil {
 		appServers.Stop()
 	}
 }
