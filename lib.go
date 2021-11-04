@@ -1051,7 +1051,6 @@ func CreateServer(password string, description string, autostart bool) {
 			s.SetAttribute(server.AttrDescription, description)
 			if autostart {
 				s.SetAttribute(server.AttrAutostart, "true")
-				LaunchServer(s.Onion())
 			} else {
 				s.SetAttribute(server.AttrAutostart, "false")
 			}
@@ -1065,6 +1064,9 @@ func CreateServer(password string, description string, autostart bool) {
 			ev := event.NewEvent(servers.NewServer, make(map[event.Field]string))
 			serverInfo.EnrichEvent(&ev)
 			application.GetPrimaryBus().Publish(ev)
+			if autostart {
+				LaunchServer(s.Onion())
+			}
 		}
 	}
 }
@@ -1079,8 +1081,13 @@ func DeleteServer(onion string, currentPassword string) {
 	if err == nil {
 		serversHandler.StopServer(onion)
 		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, event.Identity, onion, servers.Intent, servers.IntentStopped))
-		serversHandler.DeleteServer(onion, currentPassword)
-		// TODO HANDLE err from DeleteServer?
+
+		err := serversHandler.DeleteServer(onion, currentPassword)
+		if err == nil {
+			application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerDeleted, event.Status, constants.StatusSuccess, event.Identity, onion))
+		} else {
+			application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerDeleted, event.Status, constants.StatusError, event.Error, err.Error(), event.Identity, onion))
+		}
 	}
 }
 

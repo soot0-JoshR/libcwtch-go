@@ -3,8 +3,8 @@ module git.openprivacy.ca/cwtch.im/libcwtch-go
 go 1.15
 
 require (
-	cwtch.im/cwtch v0.13.0
-	git.openprivacy.ca/cwtch.im/server v1.3.1
+	cwtch.im/cwtch v0.13.1
+	git.openprivacy.ca/cwtch.im/server v1.3.2
 	git.openprivacy.ca/openprivacy/connectivity v1.5.0
 	git.openprivacy.ca/openprivacy/log v1.0.3
 	golang.org/x/mobile v0.0.0-20210716004757-34ab1303b554 // indirect
