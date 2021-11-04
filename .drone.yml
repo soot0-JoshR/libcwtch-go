@@ -1,7 +1,7 @@
 ---
 kind: pipeline
 type: docker
-name: test-build-linux-android-windows
+name: linux-android-windows-test
 
 steps:
   - name: fetch
@@ -162,15 +162,14 @@ steps:
     environment:
       BUILDFILES_KEY:
         from_secret: buildfiles_key
-    secrets: [gogs_account_token]
     when:
       event:
         - push
       status: [ success ]
     commands:
-      - echo $BUILDFILES_KEY > ~/build.id_rsab64
-      - base64 -d ~/build.id_rsab64 > ~/build.id_rsa
-      - chmod 400 ~/build.id_rsa
+      - echo $BUILDFILES_KEY > ~/id_rsab64
+      - base64 -d ~/id_rsab64 > ~/id_rsa
+      - chmod 400 ~/id_rsa
       - export DIR=libCwtch-go-macos-`cat BUILDDATE`-`cat VERSION`
       - mkdir $DIR
       - mv libCwtch.dylib  $DIR/
@@ -178,7 +177,7 @@ steps:
       - find . -type f -exec shasum -a 512 {} \; > ./../sha512s.txt
       - mv ./../sha512s.txt .
       - cd ..
-      - scp -r -o StrictHostKeyChecking=no -i ~/build.id_rsa $DIR buildfiles@build.openprivacy.ca:/home/buildfiles/buildfiles/
+      - scp -r -o StrictHostKeyChecking=no -i ~/id_rsa $DIR buildfiles@build.openprivacy.ca:/home/buildfiles/buildfiles/
 
 trigger:
   repo: cwtch.im/libcwtch-go
