@@ -1,7 +1,7 @@
 ---
 kind: pipeline
 type: docker
-name: default
+name: linux-android-windows-test
 
 steps:
   - name: fetch
@@ -75,7 +75,7 @@ steps:
      - echo $BUILDFILES_KEY > ~/id_rsab64
      - base64 -d ~/id_rsab64 > ~/id_rsa
      - chmod 400 ~/id_rsa
-     - export DIR=libCwtch-go-`cat VERSION`-`cat BUILDDATE`
+     - export DIR=libCwtch-go-`cat BUILDDATE`-`cat VERSION`
      - mkdir $DIR
      - mv libCwtch.so libCwtch.dll cwtch.aar cwtch-sources.jar libCwtch.h  $DIR/
      - cd $DIR
@@ -135,3 +135,53 @@ trigger:
     - push
     - pull_request
     - tag
+
+---
+kind: pipeline
+type: exec
+name: macos
+
+platform:
+  os: darwin
+  arch: amd64
+
+steps:
+  - name: fetch
+    commands:
+      - export PATH=$PATH:/usr/local/go/bin/
+      - git fetch --tags
+      - go get
+      # TODO: upgrade to go1.16, remove mod/vendor, add go install for 1.16
+      - echo `git describe --tags` > VERSION
+      - echo `date +%G-%m-%d-%H-%M` > BUILDDATE
+  - name: build-macos
+    commands:
+      - export PATH=$PATH:/usr/local/go/bin/
+      - make macos
+  - name: deploy-buildfiles
+    environment:
+      BUILDFILES_KEY:
+        from_secret: buildfiles_key
+    when:
+      event:
+        - push
+      status: [ success ]
+    commands:
+      - echo $BUILDFILES_KEY > ~/id_rsab64
+      - base64 -d ~/id_rsab64 > ~/id_rsa
+      - chmod 400 ~/id_rsa
+      - export DIR=libCwtch-go-macos-`cat BUILDDATE`-`cat VERSION`
+      - mkdir $DIR
+      - mv libCwtch.dylib  $DIR/
+      - cd $DIR
+      - find . -type f -exec shasum -a 512 {} \; > ./../sha512s.txt
+      - mv ./../sha512s.txt .
+      - cd ..
+      - scp -r -o StrictHostKeyChecking=no -i ~/id_rsa $DIR buildfiles@build.openprivacy.ca:/home/buildfiles/buildfiles/
+
+trigger:
+  repo: cwtch.im/libcwtch-go
+  branch: trunk
+  event:
+    - push
+    - pull_request
