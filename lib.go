@@ -208,6 +208,7 @@ func _startCwtch(appDir string, torPath string) {
 		event.ProtocolEngineStopped,
 		event.RetryServerRequest,
 		event.ManifestReceived,
+		event.FileDownloaded,
 	}
 	settings := utils.ReadGlobalSettings()
 	settingsJson, _ := json.Marshal(settings)
@@ -590,9 +591,9 @@ func GetMessage(profileOnion, handle string, messageIndex int) string {
 					message.ContactImage = ph.GetProfilePic(message.Message.PeerID)
 				} else {
 					eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
-						event.Identity:   profileOnion,
-						event.GroupID: handle,
-						event.Data:   strconv.Itoa(length),
+						event.Identity: profileOnion,
+						event.GroupID:  handle,
+						event.Data:     strconv.Itoa(length),
 					}))
 					log.Errorf("Couldn't find message in timeline %v / %v or unacked messages, probably transient threading issue, but logging for visibility..", messageIndex, length)
 				}
@@ -759,13 +760,45 @@ func c_CheckDownloadStatus(profilePtr *C.char, profileLen C.int, fileKeyPtr *C.c
 
 func CheckDownloadStatus(profileOnion, fileKey string) {
 	profile := application.GetPeer(profileOnion)
-	if path, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fileKey); exists {
+	path, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey))
+	if _, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists {
 		eventHandler.Push(event.NewEvent(event.FileDownloaded, map[event.Field]string{
 			ProfileOnion:   profileOnion,
 			event.FileKey:  fileKey,
 			event.FilePath: path,
 			event.TempFile: "",
 		}))
+	} else {
+		log.Infof("CheckDownloadStatus found .path but not .complete")
+		eventHandler.Push(event.NewEvent(event.FileDownloadProgressUpdate, map[event.Field]string{
+			ProfileOnion:           profileOnion,
+			event.FileKey:          fileKey,
+			event.Progress:         "-1",
+			event.FileSizeInChunks: "-1",
+			event.FilePath:         path,
+		}))
+	}
+}
+
+//export c_VerifyOrResumeDownload
+func c_VerifyOrResumeDownload(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, filekey_ptr *C.char, filekey_len C.int) {
+	profile := C.GoStringN(profile_ptr, profile_len)
+	handle := C.GoStringN(handle_ptr, handle_len)
+	filekey := C.GoStringN(filekey_ptr, filekey_len)
+	VerifyOrResumeDownload(profile, handle, filekey)
+}
+
+func VerifyOrResumeDownload(profileOnion, handle, fileKey string) {
+	profile := application.GetPeer(profileOnion)
+	if manifestFilePath, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%v.manifest", fileKey)); exists {
+		if downloadfilepath, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey)); exists {
+			log.Infof("resuming %s", fileKey)
+			DownloadFile(profileOnion, handle, downloadfilepath, manifestFilePath, fileKey)
+		} else {
+			log.Errorf("found manifest path but not download path for %s", fileKey)
+		}
+	} else {
+		log.Errorf("no stored manifest path found for %s", fileKey)
 	}
 }
 
@@ -1090,7 +1123,6 @@ func LaunchServer(onion string) {
 		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, event.Identity, onion, servers.Intent, servers.IntentRunning))
 	}
 }
-
 
 //export c_StopServer
 func c_StopServer(onionPtr *C.char, onionLen C.int) {
