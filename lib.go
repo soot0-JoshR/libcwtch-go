@@ -1048,8 +1048,13 @@ func DeleteServer(onion string, currentPassword string) {
 	if err == nil {
 		serversHandler.StopServer(onion)
 		application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerIntentUpdate, event.Identity, onion, servers.Intent, servers.IntentStopped))
-		serversHandler.DeleteServer(onion, currentPassword)
-		// TODO HANDLE err from DeleteServer?
+
+		err := serversHandler.DeleteServer(onion, currentPassword)
+		if err == nil {
+			application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerDeleted, event.Status, constants.StatusSuccess, event.Identity, onion))
+		} else {
+			application.GetPrimaryBus().Publish(event.NewEventList(servers.ServerDeleted, event.Status, constants.StatusError, event.Error, err.Error(), event.Identity, onion))
+		}
 	}
 }
 

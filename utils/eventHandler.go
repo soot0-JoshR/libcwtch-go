@@ -52,6 +52,7 @@ func (eh *EventHandler) HandleApp(application app.Application) {
 	application.GetPrimaryBus().Subscribe(CwtchStarted, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(servers.NewServer, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(servers.ServerIntentUpdate, eh.appBusQueue)
+	application.GetPrimaryBus().Subscribe(servers.ServerDeleted, eh.appBusQueue)
 }
 
 func (eh *EventHandler) GetNextEvent() string {
