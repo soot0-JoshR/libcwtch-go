@@ -3,6 +3,7 @@ package servers
 import (
 	"cwtch.im/cwtch/event"
 	"fmt"
+	"git.openprivacy.ca/openprivacy/log"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/server"
 	"git.openprivacy.ca/openprivacy/connectivity"
@@ -46,7 +47,10 @@ func InitServers(acn connectivity.ACN, appdir string) {
 	defer lock.Unlock()
 	if appServers == nil {
 		serversDir := path.Join(appdir, "servers")
-		os.MkdirAll(serversDir, 700)
+		err := os.MkdirAll(serversDir, 0700)
+		if err != nil {
+			log.Errorf("Could not init servers directory: %s", err)
+		}
 		appServers = server.NewServers(acn, serversDir)
 		appServers.LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
 	}
