@@ -12,6 +12,8 @@ git.openprivacy.ca/cwtch.im/server v1.3.1 h1:Kt4TnlGxGPk1KTjvs1cXtnFWDx+hYqu8w+2
 git.openprivacy.ca/cwtch.im/server v1.3.1/go.mod h1:gps6glXDt/ra66Do491csrm0TwatAc2lMLOAKCkh5Vw=
 git.openprivacy.ca/cwtch.im/server v1.3.2 h1:dUNMM88IWER6cmgCfhekahkef7laH597hqTp9CE2tYg=
 git.openprivacy.ca/cwtch.im/server v1.3.2/go.mod h1:gps6glXDt/ra66Do491csrm0TwatAc2lMLOAKCkh5Vw=
+git.openprivacy.ca/cwtch.im/server v1.3.3 h1:LhHXlFAKzl2zM6Jd2Z3w3qMZM3UnRUA0qXWrlRBvKv8=
+git.openprivacy.ca/cwtch.im/server v1.3.3/go.mod h1:gps6glXDt/ra66Do491csrm0TwatAc2lMLOAKCkh5Vw=
 git.openprivacy.ca/cwtch.im/tapir v0.4.9 h1:LXonlztwvI1F1++0IyomIcDH1/Bxzo+oN8YjGonNvjM=
 git.openprivacy.ca/cwtch.im/tapir v0.4.9/go.mod h1:p4bHo3DAO8wwimU6JAeZXbfPQ4jnoA2bV+4YvknWTNQ=
 git.openprivacy.ca/openprivacy/bine v0.0.4 h1:CO7EkGyz+jegZ4ap8g5NWRuDHA/56KKvGySR6OBPW+c=

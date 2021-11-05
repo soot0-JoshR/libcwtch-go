@@ -6,6 +6,7 @@ import (
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/server"
 	"git.openprivacy.ca/openprivacy/connectivity"
+	"os"
 	"path"
 	"sync"
 )
@@ -44,7 +45,9 @@ func InitServers(acn connectivity.ACN, appdir string) {
 	lock.Lock()
 	defer lock.Unlock()
 	if appServers == nil {
-		appServers = server.NewServers(acn, path.Join(appdir, "servers"))
+		serversDir := path.Join(appdir, "servers")
+		os.MkdirAll(serversDir, 700)
+		appServers = server.NewServers(acn, serversDir)
 		appServers.LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
 	}
 }
