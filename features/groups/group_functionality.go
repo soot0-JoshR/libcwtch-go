@@ -105,9 +105,11 @@ func (gf *GroupFunctionality) HandleImportString(peer peer.CwtchPeer, importStri
 		// Server Key Bundles are prefixed with
 		bundle, err := base64.StdEncoding.DecodeString(importString[len(serverPrefix):])
 		if err == nil {
-			if err = peer.AddServer(string(bundle)); err != nil {
+			serverOnion, err := peer.AddServer(string(bundle))
+			if err != nil {
 				return features.ConstructResponse(importBundlePrefix, err.Error())
 			}
+			peer.JoinServer(serverOnion)
 			return features.ConstructResponse(importBundlePrefix, "success")
 		}
 		return features.ConstructResponse(importBundlePrefix, err.Error())
