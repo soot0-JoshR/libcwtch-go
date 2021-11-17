@@ -15,8 +15,8 @@ import (
 const serversExperiment = "servers-experiment"
 
 const (
-	ZeroServersLoaded = event.Type("ZeroServersLoaded")
-	NewServer = event.Type("NewServer")
+	ZeroServersLoaded  = event.Type("ZeroServersLoaded")
+	NewServer          = event.Type("NewServer")
 	ServerIntentUpdate = event.Type("ServerIntentUpdate")
 	ServerDeleted = event.Type("ServerDeleted")
 )
@@ -31,12 +31,12 @@ const (
 )
 
 type ServerInfo struct {
-	Onion string
+	Onion        string
 	ServerBundle string
-	Autostart bool
-	Running bool
-	Description string
-	StorageType string
+	Autostart    bool
+	Running      bool
+	Description  string
+	StorageType  string
 }
 
 var lock sync.Mutex
@@ -72,7 +72,7 @@ type ServersFunctionality struct {
 func ExperimentGate(experimentMap map[string]bool) (*ServersFunctionality, error) {
 	if experimentMap[serversExperiment] {
 		lock.Lock()
-		defer  lock.Unlock()
+		defer lock.Unlock()
 		return &ServersFunctionality{}, nil
 	}
 	return nil, fmt.Errorf("gated by %v", serversExperiment)

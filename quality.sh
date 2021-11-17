@@ -3,9 +3,6 @@
 echo "Checking code quality (you want to see no output here)"
 echo ""
 
-echo "Vetting:"
-go list ./... | xargs go vet
-
 echo ""
 echo "Linting:"
 
