@@ -1,12 +1,14 @@
-package cwtch
+//package cwtch
 
-//package main
+package main
 
 // //Needed to invoke C.free
 // #include <stdlib.h>
 import "C"
 
 import (
+	// Import SQL Cipher
+	_ "github.com/mutecomm/go-sqlcipher/v4"
 	"crypto/rand"
 	constants2 "cwtch.im/cwtch/model/constants"
 	"encoding/json"
@@ -452,21 +454,21 @@ func LoadProfiles(pass string) {
 	application.LoadProfiles(pass)
 }
 
-//export c_c_AcceptConversations
-func c_AcceptConversations(profilePtr *C.char, profileLen C.int, conversationID C.int) {
-	AcceptConversations(C.GoStringN(profilePtr, profileLen), conversationID)
+//export c_AcceptConversations
+func c_AcceptConversations(profilePtr *C.char, profileLen C.int, conversation_id C.int) {
+	AcceptConversations(C.GoStringN(profilePtr, profileLen), int(conversation_id))
 }
 
 // AcceptConversations takes in a profileOnion and a handle to either a group or a peer and authorizes the handle
 // for further action (e.g. messaging / connecting to the server / joining the group etc.)
-func AcceptConversations(profileOnion string, conversationID int) {
+func AcceptConversations(profileOnion string, conversation_id int) {
 	profile := application.GetPeer(profileOnion)
-	profile.AcceptConversation(conversationID)
+	profile.AcceptConversation(int(conversation_id))
 }
 
 //export c_BlockContact
-func c_BlockContact(profilePtr *C.char, profileLen C.int, conversationID C.int) {
-	BlockContact(C.GoStringN(profilePtr, profileLen), conversationID)
+func c_BlockContact(profilePtr *C.char, profileLen C.int, conversation_id C.int) {
+	BlockContact(C.GoStringN(profilePtr, profileLen), int(conversation_id))
 }
 
 func BlockContact(profileOnion string, conversationID int) {
@@ -494,10 +496,9 @@ func UpdateMessageFlags(profileOnion, handle string, mIdx int, flags int64) {
 
 //export c_GetMessage
 // the pointer returned from this function **must** be Freed  by c_Free
-func c_GetMessage(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, message_index C.int) *C.char {
+func c_GetMessage(profile_ptr *C.char, profile_len C.int, conversation_id C.int, message_index C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
-	handle := C.GoStringN(handle_ptr, handle_len)
-	return C.CString(GetMessage(profile, handle, int(message_index)))
+	return C.CString(GetMessage(profile, int(conversation_id), int(message_index)))
 }
 
 // EnhancedMessage wraps a Cwtch model.Message with some additional data to reduce calls from the UI.
@@ -506,7 +507,7 @@ type EnhancedMessage struct {
 	ContactImage string
 }
 
-func GetMessage(profileOnion, handle string, messageIndex int) string {
+func GetMessage(profileOnion string, conversationID int, messageIndex int) string {
 	var message EnhancedMessage
 	// There is an edge case that can happen on Android when the app is shutdown while fetching messages...
 	// The worker threads that are spawned can become activated again when the app is opened attempt to finish their job...
@@ -515,40 +516,15 @@ func GetMessage(profileOnion, handle string, messageIndex int) string {
 	// these requests complete almost immediately v.s. being stalled for seconds to minutes on large groups.
 	if application != nil {
 		profile := application.GetPeer(profileOnion)
-		ph := utils.NewPeerHelper(profile)
-		if ph.IsGroup(handle) {
-			if profile.GetGroup(handle) != nil {
-
-				exists, timelineMessage, length := profile.GetGroup(handle).GetMessage(messageIndex)
-				if exists {
-					message.Message = timelineMessage
-					message.ContactImage = ph.GetProfilePic(message.Message.PeerID)
-				} else {
-					eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
-						event.Identity: profileOnion,
-						event.GroupID:  handle,
-						event.Data:     strconv.Itoa(length),
-					}))
-					log.Errorf("Couldn't find message in timeline %v / %v or unacked messages, probably transient threading issue, but logging for visibility..", messageIndex, length)
-				}
+		messages, err := profile.GetMostRecentMessages(conversationID,0, messageIndex, 1)
+		if err == nil && len (messages) == 1 {
+			message.Message = model.Message{
+				Message: messages[0].Body,
+				Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
+				Error: messages[0].Attr[constants2.AttrErr],
+				PeerID: messages[0].Attr["Author"],
 			}
-		} else {
-			if profile.GetContact(handle) != nil {
-				// If we are safely within the limits of the timeline just grab the message at the index..
-				if len(profile.GetContact(handle).Timeline.Messages) > messageIndex {
-					message.Message = profile.GetContact(handle).Timeline.Messages[messageIndex]
-					message.ContactImage = ph.GetProfilePic(handle)
-				} else {
-					// Otherwise Send a counter resync event...this shouldn't really happen for p2p messages so we
-					// throw an error.
-					log.Errorf("peerpeercontact getmessage out of range; sending counter resync just in case")
-					eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
-						event.Identity:   profileOnion,
-						event.RemotePeer: handle,
-						event.Data:       strconv.Itoa(len(profile.GetContact(handle).Timeline.Messages)),
-					}))
-				}
-			}
+			message.ContactImage = utils.RandomProfileImage(messages[0].Attr["Author"])
 		}
 	}
 	bytes, _ := json.Marshal(message)
@@ -557,11 +533,19 @@ func GetMessage(profileOnion, handle string, messageIndex int) string {
 
 //export c_GetMessagesByContentHash
 // the pointer returned from this function **must** be freed by calling c_Free
-func c_GetMessagesByContentHash(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, contenthash_ptr *C.char, contenthash_len C.int) *C.char {
+func c_GetMessagesByContentHash(profile_ptr *C.char, profile_len C.int, conversation_id C.int, contenthash_ptr *C.char, contenthash_len C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
-	handle := C.GoStringN(handle_ptr, handle_len)
 	contentHash := C.GoStringN(contenthash_ptr, contenthash_len)
-	return C.CString(GetMessagesByContentHash(profile, handle, contentHash))
+	return C.CString(GetMessagesByContentHash(profile, int(conversation_id), contentHash))
+}
+
+func GetMessagesByContentHash(profileOnion string, handle int, contentHash string) string {
+	var indexedMessages []model.LocallyIndexedMessage
+	if application != nil {
+		// TODO
+	}
+	bytes, _ := json.Marshal(indexedMessages)
+	return string(bytes)
 }
 
 //export c_FreePointer
@@ -570,29 +554,13 @@ func c_FreePointer(ptr *C.char) {
 	C.free(unsafe.Pointer(ptr))
 }
 
-func GetMessagesByContentHash(profileOnion, handle string, contentHash string) string {
-	var indexedMessages []model.LocallyIndexedMessage
-	if application != nil {
-		profile := application.GetPeer(profileOnion)
-		ph := utils.NewPeerHelper(profile)
-		var err error
-		timeline := ph.GetTimeline(handle)
-		if timeline != nil {
-			indexedMessages, err = timeline.GetMessagesByHash(contentHash)
-			if err != nil {
-				indexedMessages = []model.LocallyIndexedMessage{}
-			}
-		}
-	}
-	bytes, _ := json.Marshal(indexedMessages)
-	return string(bytes)
-}
+
 
 //export c_SendMessage
 func c_SendMessage(profile_ptr *C.char, profile_len C.int, conversation_id C.int, msg_ptr *C.char, msg_len C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	msg := C.GoStringN(msg_ptr, msg_len)
-	SendMessage(profile, conversation_id, msg)
+	SendMessage(profile, int(conversation_id), msg)
 }
 
 func SendMessage(profileOnion string, conversationID int, msg string) {
@@ -603,7 +571,7 @@ func SendMessage(profileOnion string, conversationID int, msg string) {
 //export c_SendInvitation
 func c_SendInvitation(profile_ptr *C.char, profile_len C.int, conversation_id C.int, target_id  C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
-	SendInvitation(profile, conversation_id, target_id)
+	SendInvitation(profile, int(conversation_id), int(target_id))
 }
 
 // SendInvitation sends an invitation from `profileOnion` to contact `handle` (peer or group)
@@ -615,10 +583,10 @@ func SendInvitation(profileOnion string, conversationID int, targetID int) {
 }
 
 //export c_ShareFile
-func c_ShareFile(profile_ptr *C.char, profile_len C.int, conversationID C.int, filepath_ptr *C.char, filepath_len C.int) {
+func c_ShareFile(profile_ptr *C.char, profile_len C.int, conversation_id C.int, filepath_ptr *C.char, filepath_len C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	sharefilepath := C.GoStringN(filepath_ptr, filepath_len)
-	ShareFile(profile, conversationID, sharefilepath)
+	ShareFile(profile, int(conversation_id), sharefilepath)
 }
 
 func ShareFile(profileOnion string , conversationID int, sharefilepath string) {
@@ -635,12 +603,12 @@ func ShareFile(profileOnion string , conversationID int, sharefilepath string) {
 }
 
 //export c_DownloadFile
-func c_DownloadFile(profile_ptr *C.char, profile_len C.int, conversationID C.int, filepath_ptr *C.char, filepath_len C.int, manifestpath_ptr *C.char, manifestpath_len C.int, filekey_ptr *C.char, filekey_len C.int) {
+func c_DownloadFile(profile_ptr *C.char, profile_len C.int, conversation_id C.int, filepath_ptr *C.char, filepath_len C.int, manifestpath_ptr *C.char, manifestpath_len C.int, filekey_ptr *C.char, filekey_len C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	downloadfilepath := C.GoStringN(filepath_ptr, filepath_len)
 	manifestpath := C.GoStringN(manifestpath_ptr, manifestpath_len)
 	filekey := C.GoStringN(filekey_ptr, filekey_len)
-	DownloadFile(profile, conversationID, downloadfilepath, manifestpath, filekey)
+	DownloadFile(profile, int(conversation_id), downloadfilepath, manifestpath, filekey)
 }
 
 func DownloadFile(profileOnion string, conversationID int, filepath, manifestpath, filekey string) {
@@ -681,10 +649,10 @@ func CheckDownloadStatus(profileOnion, fileKey string) {
 }
 
 //export c_VerifyOrResumeDownload
-func c_VerifyOrResumeDownload(profile_ptr *C.char, profile_len C.int, conversationID, filekey_ptr *C.char, filekey_len C.int) {
+func c_VerifyOrResumeDownload(profile_ptr *C.char, profile_len C.int, conversation_id C.int, filekey_ptr *C.char, filekey_len C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	filekey := C.GoStringN(filekey_ptr, filekey_len)
-	VerifyOrResumeDownload(profile, conversationID, filekey)
+	VerifyOrResumeDownload(profile, int(conversation_id), filekey)
 }
 
 func VerifyOrResumeDownload(profileOnion string, conversationID int, fileKey string) {
@@ -751,9 +719,9 @@ func DeleteProfile(profile string, password string) {
 }
 
 //export c_ArchiveConversation
-func c_ArchiveConversation(profile_ptr *C.char, profile_len C.int, conversationID C.int) {
+func c_ArchiveConversation(profile_ptr *C.char, profile_len C.int, conversation_id C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
-	ArchiveConversation(profile, conversationID)
+	ArchiveConversation(profile, int(conversation_id))
 }
 
 // ArchiveConversation sets the conversation to archived
@@ -763,9 +731,9 @@ func ArchiveConversation(profileHandle string, conversationID int) {
 }
 
 //export c_DeleteContact
-func c_DeleteContact(profile_ptr *C.char, profile_len C.int, conversationID C.int) {
+func c_DeleteContact(profile_ptr *C.char, profile_len C.int, conversation_id C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
-	DeleteContact(profile, conversationID)
+	DeleteContact(profile, int(conversation_id))
 }
 
 // DeleteContact removes all trace of the contact from the profile
@@ -825,37 +793,19 @@ func SetProfileAttribute(profileOnion string, key string, value string) {
 	}
 }
 
-//export c_SetContactAttribute
-func c_SetContactAttribute(profile_ptr *C.char, profile_len C.int, contact_ptr *C.char, contact_len C.int, key_ptr *C.char, key_len C.int, val_ptr *C.char, val_len C.int) {
+//export c_SetConversationAttribute
+func c_SetConversationAttribute(profile_ptr *C.char, profile_len C.int, conversation_id C.int, key_ptr *C.char, key_len C.int, val_ptr *C.char, val_len C.int) {
 	profileOnion := C.GoStringN(profile_ptr, profile_len)
-	contactHandle := C.GoStringN(contact_ptr, contact_len)
 	key := C.GoStringN(key_ptr, key_len)
 	value := C.GoStringN(val_ptr, val_len)
-	SetContactAttribute(profileOnion, contactHandle, key, value)
+	SetConversationAttribute(profileOnion, int(conversation_id), key, value)
 }
 
-// SetContactAttribute provides a wrapper around profile.SetProfileAttribute
-func SetContactAttribute(profileOnion string, contactHandle string, key string, value string) {
+// SetConversationAttribute provides a wrapper around profile.SetProfileAttribute
+func SetConversationAttribute(profileOnion string, conversationID int, key string, value string) {
 	profile := application.GetPeer(profileOnion)
-	profile.SetConversationAttribute(contactHandle, key, value)
-}
-
-//export c_SetGroupAttribute
-func c_SetGroupAttribute(profile_ptr *C.char, profile_len C.int, group_ptr *C.char, group_len C.int, key_ptr *C.char, key_len C.int, val_ptr *C.char, val_len C.int) {
-	profileOnion := C.GoStringN(profile_ptr, profile_len)
-	groupHandle := C.GoStringN(group_ptr, group_len)
-	key := C.GoStringN(key_ptr, key_len)
-	value := C.GoStringN(val_ptr, val_len)
-	SetGroupAttribute(profileOnion, groupHandle, key, value)
-}
-
-// SetGroupAttribute provides a wrapper around profile.SetGroupAttribute, gated by global experiments...
-func SetGroupAttribute(profileOnion string, groupHandle string, key string, value string) {
-	profile := application.GetPeer(profileOnion)
-	_, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
-	if err == nil {
-		profile.SetGroupAttribute(groupHandle, key, value)
-	}
+	zone, key := attr.ParseZone(key)
+	profile.SetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(key)), value)
 }
 
 //export c_ShutdownCwtch
@@ -1058,4 +1008,4 @@ func SetServerAttribute(onion string, key string, val string) {
 // ***** END Server APIs *****
 
 // Leave as is, needed by ffi
-//func main() {}
+func main() {}

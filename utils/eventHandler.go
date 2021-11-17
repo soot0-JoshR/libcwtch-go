@@ -163,7 +163,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					isArchived = event.False
 				}
 
-				state, set := profile.GetPeerState(conversationInfo.Handle)
+				state := profile.GetPeerState(conversationInfo.Handle)
 				if !set {
 					state = connections.DISCONNECTED
 				}
@@ -233,6 +233,8 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			if ci != nil && err == nil {
 				ev.Event.Data[event.ConversationID] = strconv.Itoa(ci.ID)
 				profile.SetConversationAttribute(ci.ID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants2.Archived)), event.False)
+			} else {
+				// TODO This Conversation May Not Exist Yet...But we are not in charge of creating it...
 			}
 			ev.Event.Data["Nick"],_ = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
 			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data["RemotePeer"])
@@ -251,21 +253,23 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			if ci != nil && err == nil {
 				ev.Event.Data[event.ConversationID] = strconv.Itoa(ci.ID)
 			}
-		case event.PeerCreated:
+		case event.ContactCreated:
+			conversationID,_ := strconv.Atoi(ev.Event.Data[event.ConversationID])
 			handle := ev.Event.Data[event.RemotePeer]
-
-			ev.Event.Data["unread"] = strconv.Itoa(ph.CountUnread(group.Timeline.GetMessages(), lastRead))
-			ev.Event.Data["picture"] = ph.GetProfilePic(handle)
-			ev.Event.Data["numMessages"] = strconv.Itoa(group.Timeline.Len())
-			ev.Event.Data["nick"] = ph.GetNick(handle)
-			ev.Event.Data["status"] = group.State
-			ev.Event.Data["authorization"] = string(model.AuthApproved)
-			ev.Event.Data["loading"] = "false"
-			ev.Event.Data["lastMsgTime"] = strconv.Itoa(getLastMessageTime(&group.Timeline))
-
+			count, err := profile.GetChannelMessageCount(conversationID, 0)
 			if err != nil {
-				return ""
+				log.Errorf("error fetching channel message count %v %v", conversationID, err)
 			}
+
+			lastMessage,_ := profile.GetMostRecentMessages(conversationID, 0, 0,1)
+			ev.Event.Data["unread"] = strconv.Itoa(1) // we've just created this contact so by definition this must be 1...
+			ev.Event.Data["picture"] = RandomProfileImage(handle)
+			ev.Event.Data["numMessages"] = strconv.Itoa(count)
+			ev.Event.Data["nick"] = handle
+			ev.Event.Data["status"] = connections.ConnectionStateName[profile.GetPeerState(handle)]
+			ev.Event.Data["authorization"] = string(model.AuthUnknown)
+			ev.Event.Data["loading"] = "false"
+			ev.Event.Data["lastMsgTime"] = strconv.Itoa(getLastMessageTime(lastMessage))
 		case event.GroupCreated:
 			// This event should only happen after we have validated the invite, as such the error
 			// condition *should* never happen.
@@ -296,8 +300,8 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				//uiManager.UpdateContactStatus(contact.Onion, int(cxnState), false)
 				if cxnState == connections.AUTHENTICATED {
 					// if known and authed, get vars
-					profile.SendScopedZonedGetValToContact(ev.Event.Data[event.RemotePeer], attr.PublicScope, attr.ProfileZone, constants.Name)
-					profile.SendScopedZonedGetValToContact(ev.Event.Data[event.RemotePeer], attr.PublicScope, attr.ProfileZone, constants2.Picture)
+					profile.SendScopedZonedGetValToContact(contact.ID, attr.PublicScope, attr.ProfileZone, constants.Name)
+					profile.SendScopedZonedGetValToContact(contact.ID, attr.PublicScope, attr.ProfileZone, constants2.Picture)
 				}
 			}
 
