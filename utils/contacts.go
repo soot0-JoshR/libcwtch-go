@@ -13,5 +13,5 @@ type Contact struct {
 	IsGroup       bool   `json:"isGroup"`
 	GroupServer   string `json:"groupServer"`
 	IsArchived    bool   `json:"isArchived"`
-	Identifier    int	 `json:"identifier"`
+	Identifier    int    `json:"identifier"`
 }

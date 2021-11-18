@@ -18,7 +18,7 @@ const (
 	ZeroServersLoaded  = event.Type("ZeroServersLoaded")
 	NewServer          = event.Type("NewServer")
 	ServerIntentUpdate = event.Type("ServerIntentUpdate")
-	ServerDeleted = event.Type("ServerDeleted")
+	ServerDeleted      = event.Type("ServerDeleted")
 )
 
 const (

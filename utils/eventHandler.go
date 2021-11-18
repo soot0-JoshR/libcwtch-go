@@ -123,7 +123,6 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				}
 			}
 
-
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
 			// Name always exists
 			e.Data[constants.Name], _ = profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
@@ -152,8 +151,19 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					continue
 				}
 
-				name,_ := conversationInfo.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
-				cpicPath := RandomProfileImage(conversationInfo.Handle)
+				name, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
+				if !exists {
+					name, exists = conversationInfo.GetAttribute(attr.PeerScope, attr.ProfileZone, constants.Name)
+					if !exists {
+						name = conversationInfo.Handle
+					}
+				}
+				var cpicPath string
+				if conversationInfo.IsGroup() {
+					cpicPath = RandomGroupImage(conversationInfo.Handle)
+				} else {
+					cpicPath = RandomProfileImage(conversationInfo.Handle)
+				}
 				saveHistory, set := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, event.SaveHistoryKey)
 				if !set {
 					saveHistory = event.DeleteHistoryDefault
@@ -177,19 +187,18 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					authorization = model.AuthBlocked
 				}
 
-				groupServer,_ := conversationInfo.GetAttribute(attr.LocalScope, attr.LegacyGroupZone, constants.GroupServer)
+				groupServer, _ := conversationInfo.GetAttribute(attr.LocalScope, attr.LegacyGroupZone, constants.GroupServer)
 
 				count, err := profile.GetChannelMessageCount(conversationInfo.ID, 0)
 				if err != nil {
 					log.Errorf("error fetching channel message count %v %v", conversationInfo.ID, err)
 				}
 
-				lastMessage,_ := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0,1)
-
+				lastMessage, _ := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0, 1)
 
 				contacts = append(contacts, Contact{
 					Name:          name,
-					Identifier:	   conversationInfo.ID,
+					Identifier:    conversationInfo.ID,
 					Onion:         conversationInfo.Handle,
 					Status:        connections.ConnectionStateName[state],
 					Picture:       cpicPath,
@@ -235,18 +244,19 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				profile.SetConversationAttribute(ci.ID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants2.Archived)), event.False)
 			} else {
 				// TODO This Conversation May Not Exist Yet...But we are not in charge of creating it...
+				log.Errorf("todo wait for contact to be added before processing this event...")
 			}
-			ev.Event.Data["Nick"],_ = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+			ev.Event.Data["Nick"], _ = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
 			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data["RemotePeer"])
 
 		case event.NewMessageFromGroup:
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
 			if ci != nil && err == nil {
-				ev.Event.Data["Nick"],_ = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+				ev.Event.Data["Nick"], _ = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
 			}
 			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data[event.GroupID])
-			conversationID,_ := strconv.Atoi(ev.Event.Data[event.ConversationID])
+			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
 			profile.SetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants2.Archived)), event.False)
 		case event.PeerAcknowledgement:
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
@@ -254,14 +264,14 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				ev.Event.Data[event.ConversationID] = strconv.Itoa(ci.ID)
 			}
 		case event.ContactCreated:
-			conversationID,_ := strconv.Atoi(ev.Event.Data[event.ConversationID])
+			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
 			handle := ev.Event.Data[event.RemotePeer]
 			count, err := profile.GetChannelMessageCount(conversationID, 0)
 			if err != nil {
 				log.Errorf("error fetching channel message count %v %v", conversationID, err)
 			}
 
-			lastMessage,_ := profile.GetMostRecentMessages(conversationID, 0, 0,1)
+			lastMessage, _ := profile.GetMostRecentMessages(conversationID, 0, 0, 1)
 			ev.Event.Data["unread"] = strconv.Itoa(1) // we've just created this contact so by definition this must be 1...
 			ev.Event.Data["picture"] = RandomProfileImage(handle)
 			ev.Event.Data["numMessages"] = strconv.Itoa(count)
@@ -288,7 +298,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			}
 		case event.PeerStateChange:
 			cxnState := connections.ConnectionStateToType()[ev.Event.Data[event.ConnectionState]]
-			contact,_ := profile.FetchConversationInfo(ev.Event.Data[event.RemotePeer])
+			contact, _ := profile.FetchConversationInfo(ev.Event.Data[event.RemotePeer])
 
 			if cxnState == connections.AUTHENTICATED && contact == nil {
 				profile.NewContactConversation(ev.Event.Data[event.RemotePeer], model.AccessControl{Read: false, Append: false, Blocked: false}, false)
@@ -307,13 +317,13 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 
 		case event.NewRetValMessageFromPeer:
 			// auto handled event means the setting is already done, we're just deciding if we need to tell the UI
-			conversationID,_ := strconv.Atoi(ev.Event.Data[event.ConversationID])
+			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
 			scope := ev.Event.Data[event.Scope]
 			path := ev.Event.Data[event.Path]
 			exists, _ := strconv.ParseBool(ev.Event.Data[event.Exists])
 
 			if exists && attr.IntoScope(scope) == attr.PublicScope {
-				zone,path := attr.ParseZone(path)
+				zone, path := attr.ParseZone(path)
 				if _, err := profile.GetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(path))); err != nil {
 					// we have a locally set override, don't pass this remote set public scope update to UI
 					return ""

@@ -11,4 +11,3 @@ const (
 	// StatusError is an event response for event.Status signifying a call failed in error, ideally accompanied by a event.Error
 	StatusError = "error"
 )
-

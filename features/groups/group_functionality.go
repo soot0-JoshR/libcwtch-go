@@ -50,7 +50,7 @@ func (gf *GroupFunctionality) GetServerInfoList(profile peer.CwtchPeer) []Server
 // GetServerInfo compiles all the information the UI might need regarding a particular server including any verified
 // cryptographic keys
 func (gf *GroupFunctionality) GetServerInfo(serverOnion string, profile peer.CwtchPeer) Server {
-	serverInfo,_ := profile.FetchConversationInfo(serverOnion)
+	serverInfo, _ := profile.FetchConversationInfo(serverOnion)
 	keyTypes := []model.KeyType{model.KeyTypeServerOnion, model.KeyTypeTokenOnion, model.KeyTypePrivacyPass}
 	var serverKeys []ServerKey
 

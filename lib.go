@@ -7,12 +7,12 @@ package main
 import "C"
 
 import (
-	// Import SQL Cipher
-	_ "github.com/mutecomm/go-sqlcipher/v4"
 	"crypto/rand"
 	constants2 "cwtch.im/cwtch/model/constants"
 	"encoding/json"
 	"fmt"
+	// Import SQL Cipher
+	_ "github.com/mutecomm/go-sqlcipher/v4"
 	"os/user"
 	"runtime"
 	"strconv"
@@ -248,18 +248,18 @@ func ReconnectCwtchForeground() {
 	}
 
 	settings := utils.ReadGlobalSettings()
-	groupHandler,_ := groups.ExperimentGate(settings.Experiments)
+	groupHandler, _ := groups.ExperimentGate(settings.Experiments)
 	for _, profileOnion := range peerList {
 		// fix peerpeercontact message counts
 		profile := application.GetPeer(profileOnion)
-		conversations,_ := profile.FetchConversations()
+		conversations, _ := profile.FetchConversations()
 		for _, conversation := range conversations {
 			if (conversation.IsGroup() && groupHandler != nil) || conversation.IsServer() == false {
-				totalMessages,_ := profile.GetChannelMessageCount(conversation.ID, 0)
+				totalMessages, _ := profile.GetChannelMessageCount(conversation.ID, 0)
 				eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
-					event.Identity:   profileOnion,
+					event.Identity:       profileOnion,
 					event.ConversationID: strconv.Itoa(conversation.ID),
-					event.Data:       strconv.Itoa(totalMessages),
+					event.Data:           strconv.Itoa(totalMessages),
 				}))
 			}
 		}
@@ -504,6 +504,7 @@ func c_GetMessage(profile_ptr *C.char, profile_len C.int, conversation_id C.int,
 // EnhancedMessage wraps a Cwtch model.Message with some additional data to reduce calls from the UI.
 type EnhancedMessage struct {
 	model.Message
+	ID           int // the actual ID of the message in the database (not the row number)
 	ContactImage string
 }
 
@@ -516,15 +517,18 @@ func GetMessage(profileOnion string, conversationID int, messageIndex int) strin
 	// these requests complete almost immediately v.s. being stalled for seconds to minutes on large groups.
 	if application != nil {
 		profile := application.GetPeer(profileOnion)
-		messages, err := profile.GetMostRecentMessages(conversationID,0, messageIndex, 1)
-		if err == nil && len (messages) == 1 {
+		messages, err := profile.GetMostRecentMessages(conversationID, 0, messageIndex, 1)
+		if err == nil && len(messages) == 1 {
+			time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
 			message.Message = model.Message{
-				Message: messages[0].Body,
+				Message:      messages[0].Body,
 				Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
-				Error: messages[0].Attr[constants2.AttrErr],
-				PeerID: messages[0].Attr["Author"],
+				Error:        messages[0].Attr[constants2.AttrErr],
+				PeerID:       messages[0].Attr[constants2.AttrAuthor],
+				Timestamp:    time,
 			}
-			message.ContactImage = utils.RandomProfileImage(messages[0].Attr["Author"])
+			message.ID = messages[0].ID
+			message.ContactImage = utils.RandomProfileImage(message.PeerID)
 		}
 	}
 	bytes, _ := json.Marshal(message)
@@ -542,7 +546,27 @@ func c_GetMessagesByContentHash(profile_ptr *C.char, profile_len C.int, conversa
 func GetMessagesByContentHash(profileOnion string, handle int, contentHash string) string {
 	var indexedMessages []model.LocallyIndexedMessage
 	if application != nil {
-		// TODO
+		profile := application.GetPeer(profileOnion)
+		id, err := profile.GetChannelMessageByContentHash(handle, 0, contentHash)
+		if err == nil {
+			// TODO this is terrible
+			messages, err := profile.GetMostRecentMessages(handle, 0, 0, 100)
+			if err == nil {
+				for i, message := range messages {
+					if message.ID == id {
+						time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
+						msg := model.Message{
+							Message:      messages[0].Body,
+							Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
+							Error:        messages[0].Attr[constants2.AttrErr],
+							PeerID:       messages[0].Attr[constants2.AttrAuthor],
+							Timestamp:    time,
+						}
+						indexedMessages = append(indexedMessages, model.LocallyIndexedMessage{LocalIndex: i, Message: msg})
+					}
+				}
+			}
+		}
 	}
 	bytes, _ := json.Marshal(indexedMessages)
 	return string(bytes)
@@ -553,8 +577,6 @@ func GetMessagesByContentHash(profileOnion string, handle int, contentHash strin
 func c_FreePointer(ptr *C.char) {
 	C.free(unsafe.Pointer(ptr))
 }
-
-
 
 //export c_SendMessage
 func c_SendMessage(profile_ptr *C.char, profile_len C.int, conversation_id C.int, msg_ptr *C.char, msg_len C.int) {
@@ -569,7 +591,7 @@ func SendMessage(profileOnion string, conversationID int, msg string) {
 }
 
 //export c_SendInvitation
-func c_SendInvitation(profile_ptr *C.char, profile_len C.int, conversation_id C.int, target_id  C.int) {
+func c_SendInvitation(profile_ptr *C.char, profile_len C.int, conversation_id C.int, target_id C.int) {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	SendInvitation(profile, int(conversation_id), int(target_id))
 }
@@ -589,7 +611,7 @@ func c_ShareFile(profile_ptr *C.char, profile_len C.int, conversation_id C.int, 
 	ShareFile(profile, int(conversation_id), sharefilepath)
 }
 
-func ShareFile(profileOnion string , conversationID int, sharefilepath string) {
+func ShareFile(profileOnion string, conversationID int, sharefilepath string) {
 	profile := application.GetPeer(profileOnion)
 	fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
 	if err != nil {
