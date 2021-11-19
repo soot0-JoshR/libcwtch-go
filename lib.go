@@ -454,14 +454,14 @@ func LoadProfiles(pass string) {
 	application.LoadProfiles(pass)
 }
 
-//export c_AcceptConversations
-func c_AcceptConversations(profilePtr *C.char, profileLen C.int, conversation_id C.int) {
-	AcceptConversations(C.GoStringN(profilePtr, profileLen), int(conversation_id))
+//export c_AcceptConversation
+func c_AcceptConversation(profilePtr *C.char, profileLen C.int, conversation_id C.int) {
+	AcceptConversation(C.GoStringN(profilePtr, profileLen), int(conversation_id))
 }
 
 // AcceptConversations takes in a profileOnion and a handle to either a group or a peer and authorizes the handle
 // for further action (e.g. messaging / connecting to the server / joining the group etc.)
-func AcceptConversations(profileOnion string, conversation_id int) {
+func AcceptConversation(profileOnion string, conversation_id int) {
 	profile := application.GetPeer(profileOnion)
 	profile.AcceptConversation(int(conversation_id))
 }

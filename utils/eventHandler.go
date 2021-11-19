@@ -151,9 +151,9 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					continue
 				}
 
-				name, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
+				name, exists := conversationInfo.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
 				if !exists {
-					name, exists = conversationInfo.GetAttribute(attr.PeerScope, attr.ProfileZone, constants.Name)
+					name, exists = conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
 					if !exists {
 						name = conversationInfo.Handle
 					}
@@ -351,6 +351,7 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.AppError, q)
 	eventBus.Subscribe(event.IndexedAcknowledgement, q)
 	eventBus.Subscribe(event.IndexedFailure, q)
+	eventBus.Subscribe(event.ContactCreated, q)
 	eventBus.Subscribe(event.NewMessageFromGroup, q)
 	eventBus.Subscribe(event.MessageCounterResync, q)
 	eventBus.Subscribe(event.GroupCreated, q)
