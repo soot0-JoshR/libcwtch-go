@@ -2,6 +2,7 @@ package servers
 
 import (
 	"cwtch.im/cwtch/event"
+	"cwtch.im/cwtch/model/attr"
 	"fmt"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/server"
@@ -29,6 +30,9 @@ const (
 	IntentRunning = "running"
 	IntentStopped = "stopped"
 )
+
+// TODO: move into Cwtch model/attr
+const ServerZone = attr.Zone("server")
 
 type ServerInfo struct {
 	Onion        string
