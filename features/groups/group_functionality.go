@@ -10,6 +10,15 @@ import (
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
 )
+<<<<<<< HEAD
+"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
+=======
+"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
+"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
+"git.openprivacy.ca/openprivacy/log"
+"strings"
+>>>>>>> minor support to manage profile servers
+)
 
 const groupExperiment = "tapir-groups-experiment"
 
