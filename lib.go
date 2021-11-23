@@ -459,7 +459,7 @@ func c_AcceptConversation(profilePtr *C.char, profileLen C.int, conversation_id 
 	AcceptConversation(C.GoStringN(profilePtr, profileLen), int(conversation_id))
 }
 
-// AcceptConversations takes in a profileOnion and a handle to either a group or a peer and authorizes the handle
+// AcceptConversation takes in a profileOnion and a handle to either a group or a peer and authorizes the handle
 // for further action (e.g. messaging / connecting to the server / joining the group etc.)
 func AcceptConversation(profileOnion string, conversation_id int) {
 	profile := application.GetPeer(profileOnion)
@@ -476,23 +476,6 @@ func BlockContact(profileOnion string, conversationID int) {
 	profile.BlockConversation(conversationID)
 }
 
-//export c_UpdateMessageFlags
-func c_UpdateMessageFlags(profile_ptr *C.char, profile_len C.int, handle_ptr *C.char, handle_len C.int, mIdx C.int, message_flags C.ulong) {
-	profile := C.GoStringN(profile_ptr, profile_len)
-	handle := C.GoStringN(handle_ptr, handle_len)
-	UpdateMessageFlags(profile, handle, int(mIdx), int64(message_flags))
-}
-
-// UpdateMessageFlags sets the messages flags on a given message for a given profile.
-// gomobile doesn't support uint64...so here we are....
-func UpdateMessageFlags(profileOnion, handle string, mIdx int, flags int64) {
-	profile := application.GetPeer(profileOnion)
-	if profile != nil {
-		profile.UpdateMessageFlags(handle, mIdx, uint64(flags))
-	} else {
-		log.Errorf("called updatemessageflags with invalid profile onion")
-	}
-}
 
 //export c_GetMessage
 // the pointer returned from this function **must** be Freed  by c_Free
@@ -547,24 +530,21 @@ func GetMessagesByContentHash(profileOnion string, handle int, contentHash strin
 	var indexedMessages []model.LocallyIndexedMessage
 	if application != nil {
 		profile := application.GetPeer(profileOnion)
-		id, err := profile.GetChannelMessageByContentHash(handle, 0, contentHash)
+		offset, err := profile.GetChannelMessageByContentHash(handle, 0, contentHash)
 		if err == nil {
-			// TODO this is terrible
-			messages, err := profile.GetMostRecentMessages(handle, 0, 0, 100)
+			messages, err := profile.GetMostRecentMessages(handle, 0, offset, 1)
 			if err == nil {
-				for i, message := range messages {
-					if message.ID == id {
-						time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
-						msg := model.Message{
-							Message:      messages[0].Body,
-							Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
-							Error:        messages[0].Attr[constants2.AttrErr],
-							PeerID:       messages[0].Attr[constants2.AttrAuthor],
-							Timestamp:    time,
-						}
-						indexedMessages = append(indexedMessages, model.LocallyIndexedMessage{LocalIndex: i, Message: msg})
+					time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
+					msg := model.Message{
+						Message:      messages[0].Body,
+						Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
+						Error:        messages[0].Attr[constants2.AttrErr],
+						PeerID:       messages[0].Attr[constants2.AttrAuthor],
+						Timestamp:    time,
 					}
-				}
+					indexedMessages = append(indexedMessages, model.LocallyIndexedMessage{LocalIndex: offset, Message: msg})
+			} else {
+				log.Errorf("error fetching local index {} ", err)
 			}
 		}
 	}
