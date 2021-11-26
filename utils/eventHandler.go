@@ -300,6 +300,10 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			cxnState := connections.ConnectionStateToType()[ev.Event.Data[event.ConnectionState]]
 			contact, _ := profile.FetchConversationInfo(ev.Event.Data[event.RemotePeer])
 
+			if ev.Event.Data[event.RemotePeer] == profile.GetOnion() {
+				return "" // suppress events from our own profile...
+			}
+
 			if cxnState == connections.AUTHENTICATED && contact == nil {
 				profile.NewContactConversation(ev.Event.Data[event.RemotePeer], model.AccessControl{Read: false, Append: false, Blocked: false}, false)
 				return ""
@@ -345,7 +349,11 @@ func unwrap(original *EventProfileEnvelope) *event.Event {
 func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus := eh.app.GetEventBus(onion)
 	q := event.NewQueue()
+
+	// eventBus.Subscribe(event.NetworkStatus, q)
+
 	eventBus.Subscribe(event.NewMessageFromPeer, q)
+	eventBus.Subscribe(event.UpdatedProfileAttribute, q)
 	eventBus.Subscribe(event.PeerAcknowledgement, q)
 	eventBus.Subscribe(event.DeleteContact, q)
 	eventBus.Subscribe(event.AppError, q)
@@ -364,7 +372,6 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.SendMessageToPeerError, q)
 	eventBus.Subscribe(event.ServerStateChange, q)
 	eventBus.Subscribe(event.PeerStateChange, q)
-	eventBus.Subscribe(event.NetworkStatus, q)
 	eventBus.Subscribe(event.ChangePasswordSuccess, q)
 	eventBus.Subscribe(event.ChangePasswordError, q)
 	eventBus.Subscribe(event.NewRetValMessageFromPeer, q)

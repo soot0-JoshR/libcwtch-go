@@ -476,7 +476,6 @@ func BlockContact(profileOnion string, conversationID int) {
 	profile.BlockConversation(conversationID)
 }
 
-
 //export c_GetMessage
 // the pointer returned from this function **must** be Freed  by c_Free
 func c_GetMessage(profile_ptr *C.char, profile_len C.int, conversation_id C.int, message_index C.int) *C.char {
@@ -518,6 +517,40 @@ func GetMessage(profileOnion string, conversationID int, messageIndex int) strin
 	return string(bytes)
 }
 
+//export c_GetMessageByID
+// the pointer returned from this function **must** be Freed  by c_Free
+func c_GetMessageByID(profile_ptr *C.char, profile_len C.int, conversation_id C.int, message_index C.int) *C.char {
+	profile := C.GoStringN(profile_ptr, profile_len)
+	return C.CString(GetMessageByID(profile, int(conversation_id), int(message_index)))
+}
+
+func GetMessageByID(profileOnion string, conversationID int, messageIndex int) string {
+	var message EnhancedMessage
+	// There is an edge case that can happen on Android when the app is shutdown while fetching messages...
+	// The worker threads that are spawned can become activated again when the app is opened attempt to finish their job...
+	// In that case we skip processing and just return the empty message...
+	// Note: This is far less likely to happen now that the UI only requests messages *after* syncing has happened and
+	// these requests complete almost immediately v.s. being stalled for seconds to minutes on large groups.
+	if application != nil {
+		profile := application.GetPeer(profileOnion)
+		dbmessage, attr, err := profile.GetChannelMessage(conversationID, 0, messageIndex)
+		if err == nil {
+			time, _ := time.Parse(time.RFC3339Nano, attr[constants2.AttrSentTimestamp])
+			message.Message = model.Message{
+				Message:      dbmessage,
+				Acknowledged: attr[constants2.AttrAck] == constants2.True,
+				Error:        attr[constants2.AttrErr],
+				PeerID:       attr[constants2.AttrAuthor],
+				Timestamp:    time,
+			}
+			message.ID = messageIndex
+			message.ContactImage = utils.RandomProfileImage(message.PeerID)
+		}
+	}
+	bytes, _ := json.Marshal(message)
+	return string(bytes)
+}
+
 //export c_GetMessagesByContentHash
 // the pointer returned from this function **must** be freed by calling c_Free
 func c_GetMessagesByContentHash(profile_ptr *C.char, profile_len C.int, conversation_id C.int, contenthash_ptr *C.char, contenthash_len C.int) *C.char {
@@ -534,15 +567,15 @@ func GetMessagesByContentHash(profileOnion string, handle int, contentHash strin
 		if err == nil {
 			messages, err := profile.GetMostRecentMessages(handle, 0, offset, 1)
 			if err == nil {
-					time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
-					msg := model.Message{
-						Message:      messages[0].Body,
-						Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
-						Error:        messages[0].Attr[constants2.AttrErr],
-						PeerID:       messages[0].Attr[constants2.AttrAuthor],
-						Timestamp:    time,
-					}
-					indexedMessages = append(indexedMessages, model.LocallyIndexedMessage{LocalIndex: offset, Message: msg})
+				time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
+				msg := model.Message{
+					Message:      messages[0].Body,
+					Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
+					Error:        messages[0].Attr[constants2.AttrErr],
+					PeerID:       messages[0].Attr[constants2.AttrAuthor],
+					Timestamp:    time,
+				}
+				indexedMessages = append(indexedMessages, model.LocallyIndexedMessage{LocalIndex: offset, Message: msg})
 			} else {
 				log.Errorf("error fetching local index {} ", err)
 			}
