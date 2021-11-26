@@ -4,13 +4,14 @@ import (
 	"cwtch.im/cwtch/event"
 	"cwtch.im/cwtch/model/attr"
 	"fmt"
-	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/server"
 	"git.openprivacy.ca/openprivacy/connectivity"
 	"git.openprivacy.ca/openprivacy/log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
+	"time"
 )
 
 const serversExperiment = "servers-experiment"
@@ -20,10 +21,13 @@ const (
 	NewServer          = event.Type("NewServer")
 	ServerIntentUpdate = event.Type("ServerIntentUpdate")
 	ServerDeleted      = event.Type("ServerDeleted")
+	ServerStatsUpdate  = event.Type("ServerStatsUpdate")
 )
 
 const (
-	Intent = event.Field("Intent")
+	Intent        = event.Field("Intent")
+	TotalMessages = event.Field("TotalMessages")
+	Connections   = event.Field("Connections")
 )
 
 const (
@@ -43,10 +47,15 @@ type ServerInfo struct {
 	StorageType  string
 }
 
+type PublishFn func(event.Event)
+
 var lock sync.Mutex
 var appServers server.Servers
+var publishFn PublishFn
+var killStatsUpdate chan bool = make(chan bool, 1)
+var enabled bool = false
 
-func InitServers(acn connectivity.ACN, appdir string) {
+func InitServers(acn connectivity.ACN, appdir string, pfn PublishFn) {
 	lock.Lock()
 	defer lock.Unlock()
 	if appServers == nil {
@@ -56,16 +65,26 @@ func InitServers(acn connectivity.ACN, appdir string) {
 			log.Errorf("Could not init servers directory: %s", err)
 		}
 		appServers = server.NewServers(acn, serversDir)
-		appServers.LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
+		publishFn = pfn
 	}
 }
 
-func DeactivateServers() {
+func Disable() {
 	lock.Lock()
 	defer lock.Unlock()
 	if appServers != nil {
 		appServers.Stop()
 	}
+	if enabled {
+		enabled = false
+		killStatsUpdate <- true
+	}
+}
+
+func Enabled() bool {
+	lock.Lock()
+	defer lock.Unlock()
+	return enabled
 }
 
 // ServersFunctionality provides experiment gated server functionality
@@ -82,8 +101,23 @@ func ExperimentGate(experimentMap map[string]bool) (*ServersFunctionality, error
 	return nil, fmt.Errorf("gated by %v", serversExperiment)
 }
 
+func (sf *ServersFunctionality) Enable() {
+	lock.Lock()
+	defer lock.Unlock()
+	if appServers != nil && !enabled {
+		enabled = true
+		go cacheForwardServerMetricUpdates()
+	}
+}
+
 func (sf *ServersFunctionality) LoadServers(password string) ([]string, error) {
-	return appServers.LoadServers(password)
+	servers, err := appServers.LoadServers(password)
+	// server:1.3/libcwtch-go:1.4 accidentely enabled monitor logging by default. make sure it's turned off
+	for _, onion := range servers {
+		server := appServers.GetServer(onion)
+		server.SetMonitorLogging(false)
+	}
+	return servers, err
 }
 
 func (sf *ServersFunctionality) CreateServer(password string) (server.Server, error) {
@@ -92,6 +126,14 @@ func (sf *ServersFunctionality) CreateServer(password string) (server.Server, er
 
 func (sf *ServersFunctionality) GetServer(onion string) server.Server {
 	return appServers.GetServer(onion)
+}
+
+func (sf *ServersFunctionality) GetServerStatistics(onion string) server.Statistics {
+	s := appServers.GetServer(onion)
+	if s != nil {
+		return s.GetStatistics()
+	}
+	return server.Statistics{}
 }
 
 func (sf *ServersFunctionality) ListServers() []string {
@@ -142,4 +184,32 @@ func (si *ServerInfo) EnrichEvent(e *event.Event) {
 	} else {
 		e.Data["Running"] = "false"
 	}
+}
+
+// cacheForwardServerMetricUpdates every minute gets metrics for all servers, and if they have changed, sends events to the UI
+func cacheForwardServerMetricUpdates() {
+	var cache map[string]server.Statistics = make(map[string]server.Statistics)
+	duration := time.Second // allow first load
+	for {
+		select {
+		case <-time.After(duration):
+			duration = time.Minute
+			serverList := appServers.ListServers()
+			for _, serverOnion := range serverList {
+				server := appServers.GetServer(serverOnion)
+				newStats := server.GetStatistics()
+				if stats, ok := cache[serverOnion]; !ok || stats.TotalConnections != newStats.TotalConnections || stats.TotalMessages != newStats.TotalMessages {
+					cache[serverOnion] = newStats
+					publishFn(event.NewEventList(ServerStatsUpdate, event.Identity, serverOnion, TotalMessages, strconv.Itoa(newStats.TotalMessages), Connections, strconv.Itoa(newStats.TotalConnections)))
+				}
+			}
+		case <-killStatsUpdate:
+			return
+		}
+	}
+}
+
+func Shutdown() {
+	Disable()
+	appServers.Destroy()
 }
