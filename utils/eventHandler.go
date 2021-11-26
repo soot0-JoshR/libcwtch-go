@@ -126,91 +126,106 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
 			// Name always exists
 			e.Data[constants.Name], _ = profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+
+			// Resolve the profile image of the profile.
 			e.Data[constants2.Picture] = RandomProfileImage(onion)
 			e.Data["Online"] = online
 
+			// Construct our conversations and our srever lists
 			var contacts []Contact
 			var servers []groups.Server
 
 			conversations, err := profile.FetchConversations()
-			if err != nil {
-				/// um....
-				return ""
-			}
-			for _, conversationInfo := range conversations {
 
-				// Only compile the server info if we have enabled the experiment...
-				// Note that this means that this info can become stale if when first loaded the experiment
-				// has been disabled and then is later re-enabled. As such we need to ensure that this list is
-				// re-fetched when the group experiment is enabled via a dedicated ListServerInfo event...
-				if conversationInfo.IsServer() {
-					groupHandler, err := groups.ExperimentGate(ReadGlobalSettings().Experiments)
-					if err == nil {
-						servers = append(servers, groupHandler.GetServerInfo(conversationInfo.Handle, profile))
+			if err == nil {
+				// We have conversations attached to this profile...
+				for _, conversationInfo := range conversations {
+					// Only compile the server info if we have enabled the experiment...
+					// Note that this means that this info can become stale if when first loaded the experiment
+					// has been disabled and then is later re-enabled. As such we need to ensure that this list is
+					// re-fetched when the group experiment is enabled via a dedicated ListServerInfo event...
+					if conversationInfo.IsServer() {
+						groupHandler, err := groups.ExperimentGate(ReadGlobalSettings().Experiments)
+						if err == nil {
+							servers = append(servers, groupHandler.GetServerInfo(conversationInfo.Handle, profile))
+						}
+						continue
 					}
-					continue
-				}
 
-				name, exists := conversationInfo.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
-				if !exists {
-					name, exists = conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
+					// Prefer local override to public name...
+					name, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
 					if !exists {
-						name = conversationInfo.Handle
+						name, exists = conversationInfo.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+						if !exists {
+							name = conversationInfo.Handle
+						}
 					}
-				}
-				var cpicPath string
-				if conversationInfo.IsGroup() {
-					cpicPath = RandomGroupImage(conversationInfo.Handle)
-				} else {
-					cpicPath = RandomProfileImage(conversationInfo.Handle)
-				}
-				saveHistory, set := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, event.SaveHistoryKey)
-				if !set {
-					saveHistory = event.DeleteHistoryDefault
-				}
-				isArchived, set := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.Archived)
-				if !set {
-					isArchived = event.False
-				}
 
-				state := profile.GetPeerState(conversationInfo.Handle)
-				if !set {
-					state = connections.DISCONNECTED
+					// Resolve the profile image of the contact
+					var cpicPath string
+					if conversationInfo.IsGroup() {
+						cpicPath = RandomGroupImage(conversationInfo.Handle)
+					} else {
+						cpicPath = RandomProfileImage(conversationInfo.Handle)
+					}
+
+					// Resolve Save History Setting
+					saveHistory, set := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, event.SaveHistoryKey)
+					if !set {
+						saveHistory = event.DeleteHistoryDefault
+					}
+
+					// Resolve Archived Setting
+					isArchived, set := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.Archived)
+					if !set {
+						isArchived = event.False
+					}
+
+					// Resolve Peer State (should probably be DISCONNECTED)
+					state := profile.GetPeerState(conversationInfo.Handle)
+					if !set {
+						state = connections.DISCONNECTED
+					}
+
+					// Resolve Conversation Auth State
+					// TODO: Align this with ACLs
+					authorization := model.AuthUnknown
+					if conversationInfo.Accepted {
+						authorization = model.AuthApproved
+					}
+
+					// If ACL has blocked conversation then hide them...
+					if acl, exists := conversationInfo.ACL[conversationInfo.Handle]; exists && acl.Blocked {
+						authorization = model.AuthBlocked
+					}
+
+					// Check if we are a server...
+					groupServer, _ := conversationInfo.GetAttribute(attr.LocalScope, attr.LegacyGroupZone, constants.GroupServer)
+
+					// Fetch the message count, and the time of the most recent message
+					count, err := profile.GetChannelMessageCount(conversationInfo.ID, 0)
+					if err != nil {
+						log.Errorf("error fetching channel message count %v %v", conversationInfo.ID, err)
+					}
+
+					lastMessage, _ := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0, 1)
+
+					contacts = append(contacts, Contact{
+						Name:          name,
+						Identifier:    conversationInfo.ID,
+						Onion:         conversationInfo.Handle,
+						Status:        connections.ConnectionStateName[state],
+						Picture:       cpicPath,
+						Authorization: string(authorization),
+						SaveHistory:   saveHistory,
+						Messages:      count,
+						Unread:        0,
+						LastMessage:   strconv.Itoa(getLastMessageTime(lastMessage)),
+						IsGroup:       conversationInfo.IsGroup(),
+						GroupServer:   groupServer,
+						IsArchived:    isArchived == event.True,
+					})
 				}
-
-				authorization := model.AuthUnknown
-				if conversationInfo.Accepted {
-					authorization = model.AuthApproved
-				}
-
-				if acl, exists := conversationInfo.ACL[conversationInfo.Handle]; exists && acl.Blocked {
-					authorization = model.AuthBlocked
-				}
-
-				groupServer, _ := conversationInfo.GetAttribute(attr.LocalScope, attr.LegacyGroupZone, constants.GroupServer)
-
-				count, err := profile.GetChannelMessageCount(conversationInfo.ID, 0)
-				if err != nil {
-					log.Errorf("error fetching channel message count %v %v", conversationInfo.ID, err)
-				}
-
-				lastMessage, _ := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0, 1)
-
-				contacts = append(contacts, Contact{
-					Name:          name,
-					Identifier:    conversationInfo.ID,
-					Onion:         conversationInfo.Handle,
-					Status:        connections.ConnectionStateName[state],
-					Picture:       cpicPath,
-					Authorization: string(authorization),
-					SaveHistory:   saveHistory,
-					Messages:      count,
-					Unread:        0,
-					LastMessage:   strconv.Itoa(getLastMessageTime(lastMessage)),
-					IsGroup:       conversationInfo.IsGroup(),
-					GroupServer:   groupServer,
-					IsArchived:    isArchived == event.True,
-				})
 			}
 
 			bytes, _ := json.Marshal(contacts)
@@ -246,14 +261,22 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				// TODO This Conversation May Not Exist Yet...But we are not in charge of creating it...
 				log.Errorf("todo wait for contact to be added before processing this event...")
 			}
-			ev.Event.Data["Nick"], _ = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+			var exists bool
+			ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
+			if !exists {
+				ev.Event.Data["Nick"], _ = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+			}
 			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data["RemotePeer"])
 
 		case event.NewMessageFromGroup:
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
 			if ci != nil && err == nil {
-				ev.Event.Data["Nick"], _ = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+				var exists bool
+				ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
+				if !exists {
+					ev.Event.Data["Nick"], _ = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+				}
 			}
 			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data[event.GroupID])
 			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
