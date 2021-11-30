@@ -74,7 +74,6 @@ func (eh *EventHandler) GetNextEvent() string {
 
 // handleAppBusEvent enriches AppBus events so they are usable with out further data fetches
 func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
-	log.Debugf("New AppBus Event to Handle: %v", e)
 	if eh.app != nil {
 		switch e.EventType {
 		case event.ACNStatus:
@@ -264,7 +263,10 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			var exists bool
 			ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
 			if !exists {
-				ev.Event.Data["Nick"], _ = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+				ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+				if !exists {
+					ev.Event.Data["Nick"] = ev.Event.Data["RemotePeer"]
+				}
 			}
 			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data["RemotePeer"])
 
@@ -275,7 +277,10 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				var exists bool
 				ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
 				if !exists {
-					ev.Event.Data["Nick"], _ = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+					ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+					if !exists {
+						ev.Event.Data["Nick"] = ev.Event.Data["RemotePeer"]
+					}
 				}
 			}
 			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data[event.GroupID])

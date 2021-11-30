@@ -710,7 +710,9 @@ func c_ResetTor() {
 }
 
 func ResetTor() {
+	log.Infof("Restarting...")
 	globalACN.Restart()
+	log.Infof("Restarted")
 }
 
 //export c_CreateGroup
@@ -816,7 +818,6 @@ func c_SetProfileAttribute(profile_ptr *C.char, profile_len C.int, key_ptr *C.ch
 // Key must have the format zone.key where Zone is defined in Cwtch. Unknown zones are not permitted.
 func SetProfileAttribute(profileOnion string, key string, value string) {
 	profile := application.GetPeer(profileOnion)
-
 	zone, key := attr.ParseZone(key)
 
 	// TODO We only allow public.profile.zone to be set for now.
@@ -841,6 +842,30 @@ func SetConversationAttribute(profileOnion string, conversationID int, key strin
 	profile := application.GetPeer(profileOnion)
 	zone, key := attr.ParseZone(key)
 	profile.SetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(key)), value)
+}
+
+//export c_SetMessageAttribute
+func c_SetMessageAttribute(profile_ptr *C.char, profile_len C.int, conversation_id C.int, channel_id C.int, message_id C.int, key_ptr *C.char, key_len C.int, val_ptr *C.char, val_len C.int) {
+	profileOnion := C.GoStringN(profile_ptr, profile_len)
+	key := C.GoStringN(key_ptr, key_len)
+	value := C.GoStringN(val_ptr, val_len)
+	SetMessageAttribute(profileOnion, int(conversation_id), int(channel_id), int(message_id), key, value)
+}
+
+// SetMessageAttribute is a wrapper around `UpdateMessageAttribute` on profile that allows the creation or update of a
+// given message attribute on a conversation/channel.
+// Errors if `profileOnion` is not associated to an existing & loaded profile,
+// of if `UpdateMessageAttribute` fails
+func SetMessageAttribute(profileOnion string, conversationID int, channelID int, messageID int, attributeKey string, attributeValue string) {
+	profile := application.GetPeer(profileOnion)
+	if profile != nil {
+		log.Errorf("called SetMessageAttribute with invalid profile handle: %v", profileOnion)
+		return
+	}
+	err := profile.UpdateMessageAttribute(conversationID, channelID, messageID, attributeKey, attributeValue)
+	if err != nil {
+		log.Errorf("error updating message attribute: %v", err)
+	}
 }
 
 //export c_ShutdownCwtch
