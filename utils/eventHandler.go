@@ -259,6 +259,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			} else {
 				// TODO This Conversation May Not Exist Yet...But we are not in charge of creating it...
 				log.Errorf("todo wait for contact to be added before processing this event...")
+				return ""
 			}
 			var exists bool
 			ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
@@ -283,7 +284,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 					}
 				}
 			}
-			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data[event.GroupID])
+			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data[event.RemotePeer])
 			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
 			profile.SetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants2.Archived)), event.False)
 		case event.PeerAcknowledgement:
@@ -293,19 +294,35 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			}
 		case event.ContactCreated:
 			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
-			handle := ev.Event.Data[event.RemotePeer]
 			count, err := profile.GetChannelMessageCount(conversationID, 0)
 			if err != nil {
 				log.Errorf("error fetching channel message count %v %v", conversationID, err)
 			}
 
+			conversationInfo, err := profile.GetConversationInfo(conversationID)
+			if err != nil {
+				log.Errorf("error fetching conversation info for %v %v", conversationID, err)
+			}
+
+			// Resolve Conversation Auth State
+			// TODO: Align this with ACLs
+			authorization := model.AuthUnknown
+			if conversationInfo.Accepted {
+				authorization = model.AuthApproved
+			}
+
+			// If ACL has blocked conversation then hide them...
+			if acl, exists := conversationInfo.ACL[conversationInfo.Handle]; exists && acl.Blocked {
+				authorization = model.AuthBlocked
+			}
+
 			lastMessage, _ := profile.GetMostRecentMessages(conversationID, 0, 0, 1)
-			ev.Event.Data["unread"] = strconv.Itoa(1) // we've just created this contact so by definition this must be 1...
-			ev.Event.Data["picture"] = RandomProfileImage(handle)
+			ev.Event.Data["unread"] = strconv.Itoa(count) // if this is a new contact with messages attached then by-definition these are unread...
+			ev.Event.Data["picture"] = RandomProfileImage(conversationInfo.Handle)
 			ev.Event.Data["numMessages"] = strconv.Itoa(count)
-			ev.Event.Data["nick"] = handle
-			ev.Event.Data["status"] = connections.ConnectionStateName[profile.GetPeerState(handle)]
-			ev.Event.Data["authorization"] = string(model.AuthUnknown)
+			ev.Event.Data["nick"] = conversationInfo.Handle
+			ev.Event.Data["status"] = connections.ConnectionStateName[profile.GetPeerState(conversationInfo.Handle)]
+			ev.Event.Data["authorization"] = string(authorization)
 			ev.Event.Data["loading"] = "false"
 			ev.Event.Data["lastMsgTime"] = strconv.Itoa(getLastMessageTime(lastMessage))
 		case event.GroupCreated:
@@ -332,8 +349,9 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				return "" // suppress events from our own profile...
 			}
 
+			// We do not know who this is...don't send any event until we see a message from them
+			// (at that point the conversation will have been created...)
 			if cxnState == connections.AUTHENTICATED && contact == nil {
-				profile.NewContactConversation(ev.Event.Data[event.RemotePeer], model.AccessControl{Read: false, Append: false, Blocked: false}, false)
 				return ""
 			}
 

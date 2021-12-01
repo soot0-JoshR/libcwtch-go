@@ -461,9 +461,9 @@ func c_AcceptConversation(profilePtr *C.char, profileLen C.int, conversation_id 
 
 // AcceptConversation takes in a profileOnion and a handle to either a group or a peer and authorizes the handle
 // for further action (e.g. messaging / connecting to the server / joining the group etc.)
-func AcceptConversation(profileOnion string, conversation_id int) {
+func AcceptConversation(profileOnion string, conversationID int) {
 	profile := application.GetPeer(profileOnion)
-	profile.AcceptConversation(int(conversation_id))
+	profile.AcceptConversation(conversationID)
 }
 
 //export c_BlockContact
@@ -488,6 +488,7 @@ type EnhancedMessage struct {
 	model.Message
 	ID           int // the actual ID of the message in the database (not the row number)
 	ContactImage string
+	Attributes   map[string]string
 }
 
 func GetMessage(profileOnion string, conversationID int, messageIndex int) string {
@@ -510,6 +511,7 @@ func GetMessage(profileOnion string, conversationID int, messageIndex int) strin
 				Timestamp:    time,
 			}
 			message.ID = messages[0].ID
+			message.Attributes = messages[0].Attr
 			message.ContactImage = utils.RandomProfileImage(message.PeerID)
 		}
 	}
@@ -544,6 +546,7 @@ func GetMessageByID(profileOnion string, conversationID int, messageIndex int) s
 				Timestamp:    time,
 			}
 			message.ID = messageIndex
+			message.Attributes = attr
 			message.ContactImage = utils.RandomProfileImage(message.PeerID)
 		}
 	}
@@ -575,6 +578,7 @@ func GetMessagesByContentHash(profileOnion string, handle int, contentHash strin
 					PeerID:       messages[0].Attr[constants2.AttrAuthor],
 					Timestamp:    time,
 				}
+				// TODO this is mostly unused at this point, consider cleaning is up in 1.6
 				indexedMessages = append(indexedMessages, model.LocallyIndexedMessage{LocalIndex: offset, Message: msg})
 			} else {
 				log.Errorf("error fetching local index {} ", err)
@@ -858,7 +862,7 @@ func c_SetMessageAttribute(profile_ptr *C.char, profile_len C.int, conversation_
 // of if `UpdateMessageAttribute` fails
 func SetMessageAttribute(profileOnion string, conversationID int, channelID int, messageID int, attributeKey string, attributeValue string) {
 	profile := application.GetPeer(profileOnion)
-	if profile != nil {
+	if profile == nil {
 		log.Errorf("called SetMessageAttribute with invalid profile handle: %v", profileOnion)
 		return
 	}
