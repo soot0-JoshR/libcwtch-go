@@ -1,6 +1,6 @@
-//package cwtch
+package cwtch
 
-package main
+//package main
 
 // //Needed to invoke C.free
 // #include <stdlib.h>
@@ -197,7 +197,7 @@ func _startCwtch(appDir string, torPath string) {
 
 	peer.DefaultEventsToHandle = []event.Type{
 		event.EncryptedGroupMessage,
-		event.NewMessageFromPeer,
+		event.NewMessageFromPeerEngine,
 		event.PeerAcknowledgement,
 		event.PeerError,
 		event.SendMessageToPeerError,
@@ -1072,4 +1072,4 @@ func SetServerAttribute(onion string, key string, val string) {
 // ***** END Server APIs *****
 
 // Leave as is, needed by ffi
-func main() {}
+//func main() {}
