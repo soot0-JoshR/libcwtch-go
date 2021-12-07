@@ -9,12 +9,7 @@ import (
 	"fmt"
 )
 
-const serverPrefix = "server:"
-const tofuBundlePrefix = "tofubundle:"
-const groupPrefix = "torv3"
 const groupExperiment = "tapir-groups-experiment"
-
-const importBundlePrefix = "importBundle"
 
 const (
 	// ServerList is a json encoded list of servers
