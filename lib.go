@@ -93,7 +93,6 @@ func StartCwtch(appDir string, torPath string) int {
 		log.SetUseColor(false)
 	}
 	log.SetLevel(log.LevelInfo)
-	log.AddEverythingFromPattern("libcwtch-go")
 	if logLevel := os.Getenv("LOG_LEVEL"); strings.ToLower(logLevel) == "debug" {
 		log.SetLevel(log.LevelDebug)
 	}
@@ -143,7 +142,7 @@ func _startCwtch(appDir string, torPath string) {
 	err := os.MkdirAll(appDir, 0700)
 	if err != nil {
 		log.Errorf("Error creating appDir %v: %v\n", appDir, err)
-		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error creating appDir %v: %v", appDir, err)))
+		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error creating appDir %v: %v", appDir, err)))
 		return
 	}
 
@@ -170,7 +169,7 @@ func _startCwtch(appDir string, torPath string) {
 
 	if err != nil {
 		log.Errorf("error creating tor data directory: %v. Aborting app start up", err)
-		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
+		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
 		return
 	}
 
@@ -178,22 +177,22 @@ func _startCwtch(appDir string, torPath string) {
 
 	if err != nil {
 		log.Errorf("error constructing torrc: %v", err)
-		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
+		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
 		return
 	}
 
 	acn, err := tor.NewTorACNWithAuth(appDir, torPath, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
 	if err != nil {
 		log.Errorf("Error connecting to Tor replacing with ErrorACN: %v\n", err)
-		eventHandler.PublishAppEvent(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
+		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
 		return
 	}
 	globalAppDir = appDir
 	globalACN = acn
-	newApp := app.NewApp(acn, appDir)
-	servers.InitServers(acn, appDir)
+	application = app.NewApp(acn, appDir)
+	servers.InitServers(acn, appDir, eventHandler.Push)
 
-	eventHandler.HandleApp(newApp)
+	eventHandler.HandleApp(application)
 
 	peer.DefaultEventsToHandle = []event.Type{
 		event.EncryptedGroupMessage,
@@ -215,8 +214,12 @@ func _startCwtch(appDir string, torPath string) {
 	settings := utils.ReadGlobalSettings()
 	settingsJson, _ := json.Marshal(settings)
 
-	newApp.LoadProfiles(constants.DefactoPasswordForUnencryptedProfiles)
-	application = newApp
+	application.LoadProfiles(constants.DefactoPasswordForUnencryptedProfiles)
+	LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
+	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+	if err == nil {
+		serversHandler.Enable()
+	}
 	publishLoadedServers()
 	LaunchServers()
 
@@ -272,6 +275,7 @@ func ReconnectCwtchForeground() {
 		}
 	}
 
+	LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
 	publishLoadedServers()
 
 	settingsJson, _ := json.Marshal(settings)
@@ -323,14 +327,17 @@ func SendAppEvent(eventJson string) {
 
 		settings := utils.ReadGlobalSettings()
 
-		// TODO: Should track state an only launch servers if server experiment re-enabled, not every save of settings
-		_, err = servers.ExperimentGate(settings.Experiments)
+		sh, err := servers.ExperimentGate(settings.Experiments)
 		if err == nil {
-			servers.InitServers(globalACN, globalAppDir)
-			publishLoadedServers()
-			LaunchServers()
+			servers.InitServers(globalACN, globalAppDir, eventHandler.Push)
+			LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
+			if !servers.Enabled() {
+				sh.Enable()
+				publishLoadedServers()
+				LaunchServers()
+			}
 		} else {
-			servers.DeactivateServers()
+			servers.Disable()
 		}
 
 		// Group Experiment Refresh
@@ -884,6 +891,7 @@ func ShutdownCwtch() {
 		// Kill the isolate
 		eventHandler.Push(event.NewEvent(event.Shutdown, map[event.Field]string{}))
 
+		servers.Shutdown()
 		// Allow for the shutdown events to go through and then purge everything else...
 		log.Infof("Shutting Down Application...")
 		application.Shutdown()

@@ -33,12 +33,6 @@ func NewEventHandler() *EventHandler {
 	return eh
 }
 
-// PublishAppEvent is a way for libCwtch-go to publish an event for consumption by a UI before a Cwtch app has been initialized
-//   Main use: to signal an error before a cwtch app could be created
-func (eh *EventHandler) PublishAppEvent(event event.Event) {
-	eh.appBusQueue.Publish(event)
-}
-
 func (eh *EventHandler) HandleApp(application app.Application) {
 	eh.app = application
 	application.GetPrimaryBus().Subscribe(event.NewPeer, eh.appBusQueue)
@@ -54,6 +48,7 @@ func (eh *EventHandler) HandleApp(application app.Application) {
 	application.GetPrimaryBus().Subscribe(servers.NewServer, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(servers.ServerIntentUpdate, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(servers.ServerDeleted, eh.appBusQueue)
+	application.GetPrimaryBus().Subscribe(servers.ServerStatsUpdate, eh.appBusQueue)
 }
 
 func (eh *EventHandler) GetNextEvent() string {
@@ -447,6 +442,9 @@ func (eh *EventHandler) forwardProfileMessages(onion string, q event.Queue) {
 	}
 }
 
+// Push pushes an event onto the app event bus
+//   It is also a way for libCwtch-go to publish an event for consumption by a UI before a Cwtch app has been initialized
+//     use: to signal an error before a cwtch app could be created
 func (eh *EventHandler) Push(newEvent event.Event) {
 	eh.appBusQueue.Publish(newEvent)
 }
