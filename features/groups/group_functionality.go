@@ -57,7 +57,6 @@ func (gf *GroupFunctionality) GetServerInfo(serverOnion string, profile peer.Cwt
 		}
 	}
 
-	descPath := attr.LocalScope.ConstructScopedZonedPath(servers.ServerZone.ConstructZonedPath(constants.Description))
-	description, _ := serverInfo.GetAttribute(descPath.ToString())
+	description, _ := serverInfo.GetAttribute(attr.LocalScope, servers.ServerZone, constants.Description)
 	return Server{Onion: serverOnion, Status: connections.ConnectionStateName[profile.GetPeerState(serverInfo.Handle)], Keys: serverKeys, Description: description}
 }
