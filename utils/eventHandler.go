@@ -13,6 +13,7 @@ import (
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
 	"git.openprivacy.ca/openprivacy/log"
 	"strconv"
+	"time"
 )
 import "cwtch.im/cwtch/event"
 
@@ -61,14 +62,18 @@ func (eh *EventHandler) GetNextEvent() string {
 	select {
 	case e := <-appChan:
 		return eh.handleAppBusEvent(&e)
-	case ev := <-eh.profileEvents:
-		return eh.handleProfileEvent(&ev)
+	default:
+		select {
+		case e := <-appChan:
+			return eh.handleAppBusEvent(&e)
+		case ev := <-eh.profileEvents:
+			return eh.handleProfileEvent(&ev)
+		}
 	}
 }
 
 // handleAppBusEvent enriches AppBus events so they are usable with out further data fetches
 func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
-	log.Debugf("New AppBus Event to Handle: %v", e)
 	if eh.app != nil {
 		switch e.EventType {
 		case event.ACNStatus:
@@ -117,106 +122,109 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				}
 			}
 
-			picVal, ok := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.Picture)
-			if !ok {
-				picVal = ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro))
-			}
-			pic, err := StringToImage(picVal)
-			if err != nil {
-				pic = NewImage(RandomProfileImage(onion), TypeImageDistro)
-			}
-			picPath := GetPicturePath(pic)
-
-			// Set publicly scopes attributes
-			profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.Picture, picPath)
-
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
-
 			// Name always exists
 			e.Data[constants.Name], _ = profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
-			e.Data[constants2.Picture] = picPath
+
+			// Resolve the profile image of the profile.
+			e.Data[constants2.Picture] = RandomProfileImage(onion)
 			e.Data["Online"] = online
 
+			// Construct our conversations and our srever lists
 			var contacts []Contact
 			var servers []groups.Server
-			for _, contact := range profile.GetContacts() {
 
-				// Only compile the server info if we have enabled the experiment...
-				// Note that this means that this info can become stale if when first loaded the experiment
-				// has been disabled and then is later re-enabled. As such we need to ensure that this list is
-				// re-fetched when the group experiment is enabled via a dedicated ListServerInfo event...
-				if profile.GetContact(contact).IsServer() {
-					groupHandler, err := groups.ExperimentGate(ReadGlobalSettings().Experiments)
-					if err == nil {
-						servers = append(servers, groupHandler.GetServerInfo(contact, profile))
+			conversations, err := profile.FetchConversations()
+
+			if err == nil {
+				// We have conversations attached to this profile...
+				for _, conversationInfo := range conversations {
+					// Only compile the server info if we have enabled the experiment...
+					// Note that this means that this info can become stale if when first loaded the experiment
+					// has been disabled and then is later re-enabled. As such we need to ensure that this list is
+					// re-fetched when the group experiment is enabled via a dedicated ListServerInfo event...
+					if conversationInfo.IsServer() {
+						groupHandler, err := groups.ExperimentGate(ReadGlobalSettings().Experiments)
+						if err == nil {
+							servers = append(servers, groupHandler.GetServerInfo(conversationInfo.Handle, profile))
+						}
+						continue
 					}
-					continue
-				}
 
-				contactInfo := profile.GetContact(contact)
-				ph := NewPeerHelper(profile)
-				name := ph.GetNick(contact)
-				cpicPath := ph.GetProfilePic(contact)
-				saveHistory, set := contactInfo.GetAttribute(event.SaveHistoryKey)
-				if !set {
-					saveHistory = event.DeleteHistoryDefault
-				}
-				isArchived, set := contactInfo.GetAttribute(attr.GetLocalScope(constants2.Archived))
-				if !set {
-					isArchived = event.False
-				}
-				contacts = append(contacts, Contact{
-					Name:          name,
-					Onion:         contactInfo.Onion,
-					Status:        contactInfo.State,
-					Picture:       cpicPath,
-					Authorization: string(contactInfo.Authorization),
-					SaveHistory:   saveHistory,
-					Messages:      contactInfo.Timeline.Len(),
-					Unread:        0,
-					LastMessage:   strconv.Itoa(getLastMessageTime(&contactInfo.Timeline)),
-					IsGroup:       false,
-					IsArchived:    isArchived == event.True,
-				})
-			}
+					// Prefer local override to public name...
+					name, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
+					if !exists {
+						name, exists = conversationInfo.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+						if !exists {
+							name = conversationInfo.Handle
+						}
+					}
 
-			// We compile and send the groups regardless of the experiment flag, and hide them in the UI
-			for _, groupId := range profile.GetGroups() {
-				group := profile.GetGroup(groupId)
+					// Resolve the profile image of the contact
+					var cpicPath string
+					if conversationInfo.IsGroup() {
+						cpicPath = RandomGroupImage(conversationInfo.Handle)
+					} else {
+						cpicPath = RandomProfileImage(conversationInfo.Handle)
+					}
 
-				// Check that the group is cryptographically valid
-				if !group.CheckGroup() {
-					continue
+					// Resolve Save History Setting
+					saveHistory, set := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, event.SaveHistoryKey)
+					if !set {
+						saveHistory = event.DeleteHistoryDefault
+					}
+
+					// Resolve Archived Setting
+					isArchived, set := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.Archived)
+					if !set {
+						isArchived = event.False
+					}
+
+					// Resolve Peer State (should probably be DISCONNECTED)
+					state := profile.GetPeerState(conversationInfo.Handle)
+					if !set {
+						state = connections.DISCONNECTED
+					}
+
+					// Resolve Conversation Auth State
+					// TODO: Align this with ACLs
+					authorization := model.AuthUnknown
+					if conversationInfo.Accepted {
+						authorization = model.AuthApproved
+					}
+
+					// If ACL has blocked conversation then hide them...
+					if acl, exists := conversationInfo.ACL[conversationInfo.Handle]; exists && acl.Blocked {
+						authorization = model.AuthBlocked
+					}
+
+					// Check if we are a server...
+					groupServer, _ := conversationInfo.GetAttribute(attr.LocalScope, attr.LegacyGroupZone, constants.GroupServer)
+
+					// Fetch the message count, and the time of the most recent message
+					count, err := profile.GetChannelMessageCount(conversationInfo.ID, 0)
+					if err != nil {
+						log.Errorf("error fetching channel message count %v %v", conversationInfo.ID, err)
+					}
+
+					lastMessage, _ := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0, 1)
+
+					contacts = append(contacts, Contact{
+						Name:          name,
+						Identifier:    conversationInfo.ID,
+						Onion:         conversationInfo.Handle,
+						Status:        connections.ConnectionStateName[state],
+						Picture:       cpicPath,
+						Authorization: string(authorization),
+						SaveHistory:   saveHistory,
+						Messages:      count,
+						Unread:        0,
+						LastMessage:   strconv.Itoa(getLastMessageTime(lastMessage)),
+						IsGroup:       conversationInfo.IsGroup(),
+						GroupServer:   groupServer,
+						IsArchived:    isArchived == event.True,
+					})
 				}
-
-				ph := NewPeerHelper(profile)
-				cpicPath := ph.GetProfilePic(groupId)
-
-				authorization := model.AuthUnknown
-				if group.Accepted {
-					authorization = model.AuthApproved
-				}
-				isArchived, set := group.GetAttribute(attr.GetLocalScope(constants2.Archived))
-				if !set {
-					isArchived = event.False
-				}
-				// Use the server state when assessing group state
-				state := profile.GetContact(group.GroupServer).State
-
-				contacts = append(contacts, Contact{
-					Name:          ph.GetNick(groupId),
-					Onion:         group.GroupID,
-					Status:        state,
-					Picture:       cpicPath,
-					Authorization: string(authorization),
-					SaveHistory:   event.SaveHistoryConfirmed,
-					Messages:      group.Timeline.Len(),
-					Unread:        0,
-					LastMessage:   strconv.Itoa(getLastMessageTime(&group.Timeline)),
-					IsGroup:       true,
-					GroupServer:   group.GroupServer,
-					IsArchived:    isArchived == event.True,
-				})
 			}
 
 			bytes, _ := json.Marshal(contacts)
@@ -239,56 +247,95 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 	if eh.app == nil {
 		log.Errorf("eh.app == nil in handleProfileEvent... this shouldnt happen?")
 	} else {
-		peer := eh.app.GetPeer(ev.Profile)
-		ph := NewPeerHelper(peer)
+		profile := eh.app.GetPeer(ev.Profile)
 		log.Debugf("New Profile Event to Handle: %v", ev)
 		switch ev.Event.EventType {
-
-		/*
-				TODO: still handle this somewhere - network info from plugin Network check
-				case event.NetworkStatus:
-			online, _ := peer.GetAttribute(attr.GetLocalScope(constants.PeerOnline))
-			if e.Data[event.Status] == plugins.NetworkCheckSuccess && online == event.False {
-				peer.SetAttribute(attr.GetLocalScope(constants.PeerOnline), event.True)
-				uiManager.UpdateNetworkStatus(true)
-				// TODO we may have to reinitialize the peer
-			} else if e.Data[event.Status] == plugins.NetworkCheckError && online == event.True {
-				peer.SetAttribute(attr.GetLocalScope(constants.PeerOnline), event.False)
-				uiManager.UpdateNetworkStatus(false)
-			}*/
-
 		case event.NewMessageFromPeer: //event.TimestampReceived, event.RemotePeer, event.Data
 			// only needs contact nickname and picture, for displaying on popup notifications
-			ev.Event.Data["Nick"] = ph.GetNick(ev.Event.Data["RemotePeer"])
-			ev.Event.Data["Picture"] = ph.GetProfilePic(ev.Event.Data["RemotePeer"])
-			peer.SetContactAttribute(ev.Event.Data["RemotePeer"], attr.GetLocalScope(constants2.Archived), event.False)
-		case event.NewMessageFromGroup:
-			// only needs contact nickname and picture, for displaying on popup notifications
-			ev.Event.Data["Nick"] = ph.GetNick(ev.Event.Data[event.GroupID])
-			ev.Event.Data["Picture"] = ph.GetProfilePic(ev.Event.Data[event.GroupID])
-			peer.SetGroupAttribute(ev.Event.Data[event.GroupID], attr.GetLocalScope(constants2.Archived), event.False)
-		case event.PeerAcknowledgement:
-			// No enrichement required
-		case event.PeerCreated:
-			handle := ev.Event.Data[event.RemotePeer]
-			err := EnrichNewPeer(handle, ph, ev)
-			if err != nil {
+			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
+			if ci != nil && err == nil {
+				ev.Event.Data[event.ConversationID] = strconv.Itoa(ci.ID)
+				profile.SetConversationAttribute(ci.ID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants2.Archived)), event.False)
+			} else {
+				// TODO This Conversation May Not Exist Yet...But we are not in charge of creating it...
+				log.Errorf("todo wait for contact to be added before processing this event...")
 				return ""
 			}
+			var exists bool
+			ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
+			if !exists {
+				ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+				if !exists {
+					ev.Event.Data["Nick"] = ev.Event.Data["RemotePeer"]
+				}
+			}
+			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data["RemotePeer"])
+
+		case event.NewMessageFromGroup:
+			// only needs contact nickname and picture, for displaying on popup notifications
+			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
+			if ci != nil && err == nil {
+				var exists bool
+				ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
+				if !exists {
+					ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
+					if !exists {
+						ev.Event.Data["Nick"] = ev.Event.Data["RemotePeer"]
+					}
+				}
+			}
+			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data[event.RemotePeer])
+			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
+			profile.SetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants2.Archived)), event.False)
+		case event.PeerAcknowledgement:
+			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
+			if ci != nil && err == nil {
+				ev.Event.Data[event.ConversationID] = strconv.Itoa(ci.ID)
+			}
+		case event.ContactCreated:
+			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
+			count, err := profile.GetChannelMessageCount(conversationID, 0)
+			if err != nil {
+				log.Errorf("error fetching channel message count %v %v", conversationID, err)
+			}
+
+			conversationInfo, err := profile.GetConversationInfo(conversationID)
+			if err != nil {
+				log.Errorf("error fetching conversation info for %v %v", conversationID, err)
+			}
+
+			// Resolve Conversation Auth State
+			// TODO: Align this with ACLs
+			authorization := model.AuthUnknown
+			if conversationInfo.Accepted {
+				authorization = model.AuthApproved
+			}
+
+			// If ACL has blocked conversation then hide them...
+			if acl, exists := conversationInfo.ACL[conversationInfo.Handle]; exists && acl.Blocked {
+				authorization = model.AuthBlocked
+			}
+
+			lastMessage, _ := profile.GetMostRecentMessages(conversationID, 0, 0, 1)
+			ev.Event.Data["unread"] = strconv.Itoa(count) // if this is a new contact with messages attached then by-definition these are unread...
+			ev.Event.Data["picture"] = RandomProfileImage(conversationInfo.Handle)
+			ev.Event.Data["numMessages"] = strconv.Itoa(count)
+			ev.Event.Data["nick"] = conversationInfo.Handle
+			ev.Event.Data["status"] = connections.ConnectionStateName[profile.GetPeerState(conversationInfo.Handle)]
+			ev.Event.Data["authorization"] = string(authorization)
+			ev.Event.Data["loading"] = "false"
+			ev.Event.Data["lastMsgTime"] = strconv.Itoa(getLastMessageTime(lastMessage))
 		case event.GroupCreated:
 			// This event should only happen after we have validated the invite, as such the error
 			// condition *should* never happen.
-
-			groupPic := ph.GetProfilePic(ev.Event.Data[event.GroupID])
+			groupPic := RandomGroupImage(ev.Event.Data[event.GroupID])
 			ev.Event.Data["PicturePath"] = groupPic
-			ev.Event.Data["GroupName"] = ph.GetNick(ev.Event.Data[event.GroupID])
-
 		case event.NewGroup:
 			// This event should only happen after we have validated the invite, as such the error
 			// condition *should* never happen.
 			serializedInvite := ev.Event.Data[event.GroupInvite]
 			if invite, err := model.ValidateInvite(serializedInvite); err == nil {
-				groupPic := ph.GetProfilePic(invite.GroupID)
+				groupPic := RandomGroupImage(invite.GroupID)
 				ev.Event.Data["PicturePath"] = groupPic
 			} else {
 				log.Errorf("received a new group event which contained an invalid invite %v. this should never happen and likely means there is a bug in cwtch. Please file a ticket @ https://git.openprivcy.ca/cwtch.im/cwtch", err)
@@ -296,10 +343,15 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			}
 		case event.PeerStateChange:
 			cxnState := connections.ConnectionStateToType()[ev.Event.Data[event.ConnectionState]]
-			contact := peer.GetContact(ev.Event.Data[event.RemotePeer])
+			contact, _ := profile.FetchConversationInfo(ev.Event.Data[event.RemotePeer])
 
+			if ev.Event.Data[event.RemotePeer] == profile.GetOnion() {
+				return "" // suppress events from our own profile...
+			}
+
+			// We do not know who this is...don't send any event until we see a message from them
+			// (at that point the conversation will have been created...)
 			if cxnState == connections.AUTHENTICATED && contact == nil {
-				peer.AddContact(ev.Event.Data[event.RemotePeer], ev.Event.Data[event.RemotePeer], model.AuthUnknown)
 				return ""
 			}
 
@@ -308,21 +360,21 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				//uiManager.UpdateContactStatus(contact.Onion, int(cxnState), false)
 				if cxnState == connections.AUTHENTICATED {
 					// if known and authed, get vars
-					peer.SendScopedZonedGetValToContact(ev.Event.Data[event.RemotePeer], attr.PublicScope, attr.ProfileZone, constants.Name)
-					peer.SendScopedZonedGetValToContact(ev.Event.Data[event.RemotePeer], attr.PublicScope, attr.ProfileZone, constants2.Picture)
+					profile.SendScopedZonedGetValToContact(contact.ID, attr.PublicScope, attr.ProfileZone, constants.Name)
+					profile.SendScopedZonedGetValToContact(contact.ID, attr.PublicScope, attr.ProfileZone, constants2.Picture)
 				}
 			}
 
 		case event.NewRetValMessageFromPeer:
 			// auto handled event means the setting is already done, we're just deciding if we need to tell the UI
-			onion := ev.Event.Data[event.RemotePeer]
+			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
 			scope := ev.Event.Data[event.Scope]
 			path := ev.Event.Data[event.Path]
-			//val := ev.Event.Data[event.Data]
 			exists, _ := strconv.ParseBool(ev.Event.Data[event.Exists])
 
 			if exists && attr.IntoScope(scope) == attr.PublicScope {
-				if _, exists := peer.GetContactAttribute(onion, attr.GetLocalScope(path)); exists {
+				zone, path := attr.ParseZone(path)
+				if _, err := profile.GetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(path))); err != nil {
 					// we have a locally set override, don't pass this remote set public scope update to UI
 					return ""
 				}
@@ -343,12 +395,17 @@ func unwrap(original *EventProfileEnvelope) *event.Event {
 func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus := eh.app.GetEventBus(onion)
 	q := event.NewQueue()
+
+	// eventBus.Subscribe(event.NetworkStatus, q)
+
 	eventBus.Subscribe(event.NewMessageFromPeer, q)
+	eventBus.Subscribe(event.UpdatedProfileAttribute, q)
 	eventBus.Subscribe(event.PeerAcknowledgement, q)
 	eventBus.Subscribe(event.DeleteContact, q)
 	eventBus.Subscribe(event.AppError, q)
 	eventBus.Subscribe(event.IndexedAcknowledgement, q)
 	eventBus.Subscribe(event.IndexedFailure, q)
+	eventBus.Subscribe(event.ContactCreated, q)
 	eventBus.Subscribe(event.NewMessageFromGroup, q)
 	eventBus.Subscribe(event.MessageCounterResync, q)
 	eventBus.Subscribe(event.GroupCreated, q)
@@ -361,8 +418,6 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.SendMessageToPeerError, q)
 	eventBus.Subscribe(event.ServerStateChange, q)
 	eventBus.Subscribe(event.PeerStateChange, q)
-	eventBus.Subscribe(event.PeerCreated, q)
-	eventBus.Subscribe(event.NetworkStatus, q)
 	eventBus.Subscribe(event.ChangePasswordSuccess, q)
 	eventBus.Subscribe(event.ChangePasswordError, q)
 	eventBus.Subscribe(event.NewRetValMessageFromPeer, q)
@@ -394,4 +449,15 @@ func (eh *EventHandler) forwardProfileMessages(onion string, q event.Queue) {
 
 func (eh *EventHandler) Push(newEvent event.Event) {
 	eh.appBusQueue.Publish(newEvent)
+}
+
+func getLastMessageTime(conversationMessages []model.ConversationMessage) int {
+	if len(conversationMessages) == 0 {
+		return 0
+	}
+	time, err := time.Parse(time.RFC3339Nano, conversationMessages[0].Attr[constants.AttrSentTimestamp])
+	if err != nil {
+		return 0
+	}
+	return int(time.Unix())
 }
