@@ -323,6 +323,7 @@ func SendAppEvent(eventJson string) {
 
 		settings := utils.ReadGlobalSettings()
 
+		// TODO: Should track state an only launch servers if server experiment re-enabled, not every save of settings
 		_, err = servers.ExperimentGate(settings.Experiments)
 		if err == nil {
 			servers.InitServers(globalACN, globalAppDir)

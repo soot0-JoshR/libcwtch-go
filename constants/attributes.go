@@ -14,6 +14,9 @@ const ProfileTypeV1Password = "v1-userPassword"
 // PeerOnline stores state on if the peer believes it is online
 const PeerOnline = "peer-online"
 
+// Description is used on server contacts,
+const Description = "description"
+
 const StateProfilePane = "state-profile-pane"
 const StateSelectedConversation = "state-selected-conversation"
 const StateSelectedProfileTime = "state-selected-profile-time"
