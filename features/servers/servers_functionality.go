@@ -2,7 +2,6 @@ package servers
 
 import (
 	"cwtch.im/cwtch/event"
-	"cwtch.im/cwtch/model/attr"
 	"fmt"
 	"git.openprivacy.ca/cwtch.im/server"
 	"git.openprivacy.ca/openprivacy/connectivity"
@@ -36,7 +35,6 @@ const (
 )
 
 // TODO: move into Cwtch model/attr
-const ServerZone = attr.Zone("server")
 
 type ServerInfo struct {
 	Onion        string

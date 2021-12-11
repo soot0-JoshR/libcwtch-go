@@ -13,6 +13,8 @@ cloud.google.com/go/storage v1.0.0/go.mod h1:IhtSnM/ZTZV8YYJWCY8RULGVqBDmpoyjwiy
 cwtch.im/cwtch v0.14.1/go.mod h1:/fLuoYLY/7JHw6RojFojpd245CiOcU24QpWqzh9FRDI=
 cwtch.im/cwtch v0.14.2 h1:Q9rUainxUcHB2+F46lxhIS5kwZLy9BhPoQI1WnKcOD4=
 cwtch.im/cwtch v0.14.2/go.mod h1:/fLuoYLY/7JHw6RojFojpd245CiOcU24QpWqzh9FRDI=
+cwtch.im/cwtch v0.14.3 h1:CKNBYGfKErtLDY3fUOyadTVNbI2JjOe+Ud/srydVAko=
+cwtch.im/cwtch v0.14.3/go.mod h1:/fLuoYLY/7JHw6RojFojpd245CiOcU24QpWqzh9FRDI=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
 filippo.io/edwards25519 v1.0.0-rc.1 h1:m0VOOB23frXZvAOK44usCgLWvtsxIoMCTBGJZlpmGfU=
 filippo.io/edwards25519 v1.0.0-rc.1/go.mod h1:N1IkdkCkiLB6tki+MYJoSx2JTY9NUlxZE7eHn5EwJns=
