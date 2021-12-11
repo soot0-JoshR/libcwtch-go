@@ -8,7 +8,6 @@ import (
 	"cwtch.im/cwtch/protocol/connections"
 	"fmt"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
-	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
 )
 
 const groupExperiment = "tapir-groups-experiment"
@@ -57,6 +56,6 @@ func (gf *GroupFunctionality) GetServerInfo(serverOnion string, profile peer.Cwt
 		}
 	}
 
-	description, _ := serverInfo.GetAttribute(attr.LocalScope, servers.ServerZone, constants.Description)
-	return Server{Onion: serverOnion, Status: connections.ConnectionStateName[profile.GetPeerState(serverInfo.Handle)], Keys: serverKeys, Description: description}
+	description, _ := serverInfo.GetAttribute(attr.LocalScope, attr.ServerZone, constants.Description)
+	return Server{Onion: serverOnion, Identifier: serverInfo.ID, Status: connections.ConnectionStateName[profile.GetPeerState(serverInfo.Handle)], Keys: serverKeys, Description: description}
 }
