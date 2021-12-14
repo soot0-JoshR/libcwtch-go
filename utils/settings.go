@@ -29,6 +29,7 @@ const saltFile = "SALT"
 type GlobalSettings struct {
 	Locale                  string
 	Theme                   string
+	ThemeMode               string
 	PreviousPid             int64
 	ExperimentsEnabled      bool
 	Experiments             map[string]bool
