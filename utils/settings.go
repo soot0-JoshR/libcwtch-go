@@ -1,15 +1,17 @@
 package utils
 
 import (
-	"cwtch.im/cwtch/event"
-	"cwtch.im/cwtch/storage/v1"
 	"sync"
 
+	"cwtch.im/cwtch/event"
+	"cwtch.im/cwtch/storage/v1"
+
 	"encoding/json"
-	"git.openprivacy.ca/openprivacy/log"
 	"io/ioutil"
 	"os"
 	"path"
+
+	"git.openprivacy.ca/openprivacy/log"
 )
 
 const (
@@ -36,6 +38,7 @@ type GlobalSettings struct {
 	FirstTime               bool
 	UIColumnModePortrait    string
 	UIColumnModeLandscape   string
+	DownloadPath            string
 }
 
 var DefaultGlobalSettings = GlobalSettings{
@@ -50,6 +53,7 @@ var DefaultGlobalSettings = GlobalSettings{
 	StreamerMode:            false,
 	UIColumnModePortrait:    "DualpaneMode.Single",
 	UIColumnModeLandscape:   "DualpaneMode.CopyPortrait",
+	DownloadPath:            "",
 }
 
 func InitGlobalSettingsFile(directory string, password string) error {
@@ -111,6 +115,7 @@ func WriteGlobalSettings(globalSettings GlobalSettings) {
 	lock.Lock()
 	defer lock.Unlock()
 	bytes, _ := json.Marshal(globalSettings)
+	log.Debugf("writing settings: %v", string(bytes))
 	// override first time setting
 	globalSettings.FirstTime = true
 	err := GlobalSettingsFile.Write(bytes)

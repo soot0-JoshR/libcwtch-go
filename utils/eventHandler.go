@@ -1,20 +1,24 @@
 package utils
 
 import (
+	"encoding/json"
+	"strconv"
+	"strings"
+
 	"cwtch.im/cwtch/app"
 	"cwtch.im/cwtch/app/plugins"
 	"cwtch.im/cwtch/model"
 	"cwtch.im/cwtch/model/attr"
 	"cwtch.im/cwtch/model/constants"
 	"cwtch.im/cwtch/protocol/connections"
-	"encoding/json"
 	constants2 "git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
 	"git.openprivacy.ca/openprivacy/log"
-	"strconv"
+
+	"cwtch.im/cwtch/event"
+	"cwtch.im/cwtch/functionality/filesharing"
 )
-import "cwtch.im/cwtch/event"
 
 type EventProfileEnvelope struct {
 	Event   event.Event
@@ -262,6 +266,37 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			ev.Event.Data["Nick"] = ph.GetNick(ev.Event.Data["RemotePeer"])
 			ev.Event.Data["Picture"] = ph.GetProfilePic(ev.Event.Data["RemotePeer"])
 			peer.SetContactAttribute(ev.Event.Data["RemotePeer"], attr.GetLocalScope(constants2.Archived), event.False)
+
+			fh, err := filesharing.PreviewFunctionalityGate(ReadGlobalSettings().Experiments)
+			if err == nil {
+				var cm model.MessageWrapper
+				err := json.Unmarshal([]byte(ev.Event.Data[event.Data]), &cm)
+				if err == nil && cm.Overlay == model.OverlayFileSharing {
+					var fm filesharing.OverlayMessage
+					log.Debugf("parsing: %v", cm.Data)
+					err = json.Unmarshal([]byte(cm.Data), &fm)
+					if err == nil {
+						lname := strings.ToLower(fm.Name)
+						if strings.HasSuffix(lname, "jpg") || strings.HasSuffix(lname, "jpeg") || strings.HasSuffix(lname, "png") || strings.HasSuffix(lname, "gif") || strings.HasSuffix(lname, "webp") || strings.HasSuffix(lname, "bmp") {
+							settings := ReadGlobalSettings()
+							basepath := settings.DownloadPath
+							//todo: security
+							fp, mp := filesharing.GenerateDownloadPath(basepath, fm.Name)
+							log.Debugf("NMFP: autodownloading file!!!")
+							log.Debugf("%v | %v | %v | %v | %v | %v", basepath, fm.Name, fp, mp, fm.FileKey(), fm)
+							fh.DownloadFile(peer, ev.Event.Data[event.RemotePeer], fp, mp, fm.FileKey())
+						} else {
+							log.Debugf("NMFP: suffix not jpg/jpeg/png")
+						}
+					} else {
+						log.Debugf("NMFP: not a file overlay message")
+					}
+				} else {
+					log.Debugf("NMFP: not a message wrapper")
+				}
+			} else {
+				log.Debugf("NMFP: file experiment is off")
+			}
 		case event.NewMessageFromGroup:
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ev.Event.Data["Nick"] = ph.GetNick(ev.Event.Data[event.GroupID])
