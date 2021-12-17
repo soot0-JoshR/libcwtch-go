@@ -41,7 +41,6 @@ func (eh *EventHandler) HandleApp(application app.Application) {
 	application.GetPrimaryBus().Subscribe(event.Shutdown, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(event.AppError, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(event.ACNStatus, eh.appBusQueue)
-	application.GetPrimaryBus().Subscribe(event.ReloadDone, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(event.ACNVersion, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(UpdateGlobalSettings, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(CwtchStarted, eh.appBusQueue)
@@ -95,7 +94,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			if e.Data[event.Created] == event.True {
 				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.Picture, ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro)))
 			}
-			if e.Data[event.Status] != event.StorageRunning || e.Data[event.Created] == event.True {
+			if e.Data[event.Created] == event.True {
 				profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline, event.False)
 				eh.app.AddPeerPlugin(onion, plugins.CONNECTIONRETRY)
 				eh.app.AddPeerPlugin(onion, plugins.NETWORKCHECK)
@@ -405,18 +404,12 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.MessageCounterResync, q)
 	eventBus.Subscribe(event.GroupCreated, q)
 	eventBus.Subscribe(event.NewGroup, q)
-	eventBus.Subscribe(event.AcceptGroupInvite, q)
-	eventBus.Subscribe(event.SetPeerAttribute, q)
-	eventBus.Subscribe(event.SetGroupAttribute, q)
 	eventBus.Subscribe(event.DeleteGroup, q)
 	eventBus.Subscribe(event.SendMessageToGroupError, q)
 	eventBus.Subscribe(event.SendMessageToPeerError, q)
 	eventBus.Subscribe(event.ServerStateChange, q)
 	eventBus.Subscribe(event.PeerStateChange, q)
-	eventBus.Subscribe(event.ChangePasswordSuccess, q)
-	eventBus.Subscribe(event.ChangePasswordError, q)
 	eventBus.Subscribe(event.NewRetValMessageFromPeer, q)
-	eventBus.Subscribe(event.SetAttribute, q)
 	eventBus.Subscribe(event.ShareManifest, q)
 	eventBus.Subscribe(event.ManifestSizeReceived, q)
 	eventBus.Subscribe(event.ManifestError, q)
