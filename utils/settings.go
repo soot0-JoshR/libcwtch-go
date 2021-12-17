@@ -116,7 +116,6 @@ func WriteGlobalSettings(globalSettings GlobalSettings) {
 	lock.Lock()
 	defer lock.Unlock()
 	bytes, _ := json.Marshal(globalSettings)
-	log.Debugf("writing settings: %v", string(bytes))
 	// override first time setting
 	globalSettings.FirstTime = true
 	err := GlobalSettingsFile.Write(bytes)
