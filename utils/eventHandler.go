@@ -94,26 +94,25 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			if e.Data[event.Created] == event.True {
 				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.Picture, ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro)))
 			}
-			if e.Data[event.Created] == event.True {
-				profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline, event.False)
-				eh.app.AddPeerPlugin(onion, plugins.CONNECTIONRETRY)
-				eh.app.AddPeerPlugin(onion, plugins.NETWORKCHECK)
 
-				// If the user has chosen to block unknown profiles
-				// then explicitly configure the protocol engine to do so..
-				if ReadGlobalSettings().BlockUnknownConnections {
-					profile.BlockUnknownConnections()
-				} else {
-					// For completeness
-					profile.AllowUnknownConnections()
-				}
+			profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline, event.False)
+			eh.app.AddPeerPlugin(onion, plugins.CONNECTIONRETRY)
+			eh.app.AddPeerPlugin(onion, plugins.NETWORKCHECK)
 
-				// Start up the Profile
-				profile.Listen()
-				profile.StartPeersConnections()
-				if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
-					profile.StartServerConnections()
-				}
+			// If the user has chosen to block unknown profiles
+			// then explicitly configure the protocol engine to do so..
+			if ReadGlobalSettings().BlockUnknownConnections {
+				profile.BlockUnknownConnections()
+			} else {
+				// For completeness
+				profile.AllowUnknownConnections()
+			}
+
+			// Start up the Profile
+			profile.Listen()
+			profile.StartPeersConnections()
+			if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
+				profile.StartServerConnections()
 			}
 
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
@@ -409,6 +408,8 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.SendMessageToPeerError, q)
 	eventBus.Subscribe(event.ServerStateChange, q)
 	eventBus.Subscribe(event.PeerStateChange, q)
+	eventBus.Subscribe(event.ChangePasswordSuccess, q)
+	eventBus.Subscribe(event.ChangePasswordError, q)
 	eventBus.Subscribe(event.NewRetValMessageFromPeer, q)
 	eventBus.Subscribe(event.ShareManifest, q)
 	eventBus.Subscribe(event.ManifestSizeReceived, q)
