@@ -13,6 +13,9 @@ import (
 
 	constants2 "cwtch.im/cwtch/model/constants"
 
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
+
+
 	// Import SQL Cipher
 	"os/user"
 	"runtime"
@@ -879,6 +882,28 @@ func SetMessageAttribute(profileOnion string, conversationID int, channelID int,
 	err := profile.UpdateMessageAttribute(conversationID, channelID, messageID, attributeKey, attributeValue)
 	if err != nil {
 		log.Errorf("error updating message attribute: %v", err)
+	}
+}
+
+//export c_ChangePassword
+func c_ChangePassword(profile_ptr *C.char, profile_len C.int, oldpassword_ptr *C.char, oldpassword_len C.int,  newpassword_ptr *C.char, newpassword_len C.int,  newpassword_again_ptr *C.char, newpassword_again_len C.int) {
+	profileOnion := C.GoStringN(profile_ptr, profile_len)
+	oldPassword := C.GoStringN(oldpassword_ptr, oldpassword_len)
+	newPassword := C.GoStringN(newpassword_ptr, newpassword_len)
+	newPasswordAgain := C.GoStringN(newpassword_again_ptr, newpassword_again_len)
+	ChangePassword(profileOnion, oldPassword, newPassword, newPasswordAgain)
+}
+
+// ChangePassword provides a wrapper around profile.ChangePassword
+func ChangePassword(profileOnion string, oldPassword string, newPassword string, newPasswordAgain string) {
+	profile := application.GetPeer(profileOnion)
+	log.Infof("changing password for %v", profileOnion)
+	err := profile.ChangePassword(oldPassword, newPassword, newPasswordAgain)
+	log.Infof("change password result %v", err)
+	if err == nil {
+		eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: features.ConstructResponse("changepassword", constants.StatusSuccess).Error()}))
+	} else {
+		eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: features.ConstructResponse("changepassword", err.Error()).Error()}))
 	}
 }
 
