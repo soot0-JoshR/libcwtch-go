@@ -8,16 +8,19 @@ import "C"
 
 import (
 	"crypto/rand"
-	constants2 "cwtch.im/cwtch/model/constants"
 	"encoding/json"
 	"fmt"
+
+	constants2 "cwtch.im/cwtch/model/constants"
+
 	// Import SQL Cipher
-	_ "github.com/mutecomm/go-sqlcipher/v4"
 	"os/user"
 	"runtime"
 	"strconv"
 	"strings"
 	"unsafe"
+
+	_ "github.com/mutecomm/go-sqlcipher/v4"
 
 	"cwtch.im/cwtch/app"
 	"cwtch.im/cwtch/event"
@@ -96,7 +99,6 @@ func StartCwtch(appDir string, torPath string) int {
 	if logLevel := os.Getenv("LOG_LEVEL"); strings.ToLower(logLevel) == "debug" {
 		log.SetLevel(log.LevelDebug)
 	}
-
 	log.Infof("StartCwtch(...)")
 	// Quick hack check that we're being called with the correct params
 	// On android a stale worker could be calling us with "last apps" directory. Best to abort fast so the app can make a new worker
