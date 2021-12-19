@@ -265,6 +265,9 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
 				if !exists {
 					ev.Event.Data["Nick"] = ev.Event.Data["RemotePeer"]
+					// If we dont have a name val for a peer, but they have sent us a message, we might be approved now, re-ask
+					profile.SendScopedZonedGetValToContact(ci.ID, attr.PublicScope, attr.ProfileZone, constants.Name)
+					profile.SendScopedZonedGetValToContact(ci.ID, attr.PublicScope, attr.ProfileZone, constants2.Picture)
 				}
 			}
 			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data["RemotePeer"])
@@ -379,7 +382,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 
 			if exists && attr.IntoScope(scope) == attr.PublicScope {
 				zone, path := attr.ParseZone(path)
-				if _, err := profile.GetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(path))); err != nil {
+				if val, err := profile.GetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(path))); err != nil && val != "" {
 					// we have a locally set override, don't pass this remote set public scope update to UI
 					return ""
 				}
