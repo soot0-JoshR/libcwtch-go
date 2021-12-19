@@ -416,8 +416,6 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.GroupCreated, q)
 	eventBus.Subscribe(event.NewGroup, q)
 	eventBus.Subscribe(event.DeleteGroup, q)
-	eventBus.Subscribe(event.SendMessageToGroupError, q)
-	eventBus.Subscribe(event.SendMessageToPeerError, q)
 	eventBus.Subscribe(event.ServerStateChange, q)
 	eventBus.Subscribe(event.PeerStateChange, q)
 	eventBus.Subscribe(event.ChangePasswordSuccess, q)
