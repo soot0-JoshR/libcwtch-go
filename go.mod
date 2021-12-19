@@ -10,3 +10,5 @@ require (
 	github.com/mutecomm/go-sqlcipher/v4 v4.4.2
 	golang.org/x/sys v0.0.0-20210823070655-63515b42dcdf // indirect
 )
+
+replace cwtch.im/cwtch => /home/erinn/Android/Goprojects/cwtch

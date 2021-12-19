@@ -9,6 +9,7 @@ import (
 	"cwtch.im/cwtch/model"
 	"cwtch.im/cwtch/model/attr"
 	"cwtch.im/cwtch/model/constants"
+	"cwtch.im/cwtch/peer"
 	"cwtch.im/cwtch/protocol/connections"
 	constants2 "git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
@@ -268,26 +269,8 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			}
 			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data["RemotePeer"])
 
-			fh, err := filesharing.PreviewFunctionalityGate(ReadGlobalSettings().Experiments)
-			if err == nil && ci.Accepted {
-				var cm model.MessageWrapper
-				err := json.Unmarshal([]byte(ev.Event.Data[event.Data]), &cm)
-				if err == nil && cm.Overlay == model.OverlayFileSharing {
-					var fm filesharing.OverlayMessage
-					err = json.Unmarshal([]byte(cm.Data), &fm)
-					if err == nil {
-						if fm.ShouldAutoDL() {
-							settings := ReadGlobalSettings()
-							basepath := settings.DownloadPath
-							fp, mp := filesharing.GenerateDownloadPath(basepath, fm.Name)
-							log.Debugf("autodownloading file!")
-							ev.Event.Data["Auto"] = "true"
-							mID, _ := strconv.Atoi(ev.Event.Data["Index"])
-							profile.UpdateMessageAttribute(ci.ID, 0, mID, "file-downloaded", "true")
-							fh.DownloadFile(profile, ci.ID, fp, mp, fm.FileKey())
-						}
-					}
-				}
+			if ci.Accepted {
+				handleImagePreviews(profile, &ev.Event, ci.ID, ci.ID)
 			}
 		case event.NewMessageFromGroup:
 			// only needs contact nickname and picture, for displaying on popup notifications
@@ -306,27 +289,8 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
 			profile.SetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants2.Archived)), event.False)
 
-			// note careful use of ci.ID versus conversationID
-			fh, err := filesharing.PreviewFunctionalityGate(ReadGlobalSettings().Experiments)
-			if err == nil && ci != nil && ci.Accepted {
-				var cm model.MessageWrapper
-				err := json.Unmarshal([]byte(ev.Event.Data[event.Data]), &cm)
-				if err == nil && cm.Overlay == model.OverlayFileSharing {
-					var fm filesharing.OverlayMessage
-					err = json.Unmarshal([]byte(cm.Data), &fm)
-					if err == nil {
-						if fm.ShouldAutoDL() {
-							settings := ReadGlobalSettings()
-							basepath := settings.DownloadPath
-							fp, mp := filesharing.GenerateDownloadPath(basepath, fm.Name)
-							log.Debugf("autodownloading file!")
-							ev.Event.Data["Auto"] = "true"
-							mID, _ := strconv.Atoi(ev.Event.Data["Index"])
-							profile.UpdateMessageAttribute(conversationID, 0, mID, "file-downloaded", "true")
-							fh.DownloadFile(profile, ci.ID, fp, mp, fm.FileKey())
-						}
-					}
-				}
+			if ci != nil && ci.Accepted {
+				handleImagePreviews(profile, &ev.Event, conversationID, ci.ID)
 			}
 		case event.PeerAcknowledgement:
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
@@ -500,4 +464,29 @@ func getLastMessageTime(conversationMessages []model.ConversationMessage) int {
 		return 0
 	}
 	return int(time.Unix())
+}
+
+// handleImagePreviews checks settings and, if appropriate, auto-downloads any images
+func handleImagePreviews(profile peer.CwtchPeer, ev *event.Event, conversationID, senderID int) {
+	settings := ReadGlobalSettings()
+	fh, err := filesharing.PreviewFunctionalityGate(settings.Experiments)
+	if err == nil {
+		var cm model.MessageWrapper
+		err := json.Unmarshal([]byte(ev.Data[event.Data]), &cm)
+		if err == nil && cm.Overlay == model.OverlayFileSharing {
+			var fm filesharing.OverlayMessage
+			err = json.Unmarshal([]byte(cm.Data), &fm)
+			if err == nil {
+				if fm.ShouldAutoDL() {
+					basepath := settings.DownloadPath
+					fp, mp := filesharing.GenerateDownloadPath(basepath, fm.Name)
+					log.Debugf("autodownloading file!")
+					ev.Data["Auto"] = constants.True
+					mID, _ := strconv.Atoi(ev.Data["Index"])
+					profile.UpdateMessageAttribute(conversationID, 0, mID, constants.AttrDownloaded, constants.True)
+					fh.DownloadFile(profile, senderID, fp, mp, fm.FileKey())
+				}
+			}
+		}
+	}
 }
