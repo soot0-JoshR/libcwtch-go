@@ -95,11 +95,10 @@ func StartCwtch(appDir string, torPath string) int {
 	if runtime.GOOS == "android" {
 		log.SetUseColor(false)
 	}
-	// log.SetLevel(log.LevelInfo)
-	// if logLevel := os.Getenv("LOG_LEVEL"); strings.ToLower(logLevel) == "debug" {
-	// 	log.SetLevel(log.LevelDebug)
-	// }
-	log.SetLevel(log.LevelDebug)
+	log.SetLevel(log.LevelInfo)
+	if logLevel := os.Getenv("LOG_LEVEL"); strings.ToLower(logLevel) == "debug" {
+		log.SetLevel(log.LevelDebug)
+	}
 	log.Infof("StartCwtch(...)")
 	// Quick hack check that we're being called with the correct params
 	// On android a stale worker could be calling us with "last apps" directory. Best to abort fast so the app can make a new worker
