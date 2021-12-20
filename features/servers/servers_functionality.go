@@ -144,6 +144,11 @@ func (sf *ServersFunctionality) DeleteServer(onion string, currentPassword strin
 
 func (sf *ServersFunctionality) LaunchServer(onion string) {
 	appServers.LaunchServer(onion)
+	server := appServers.GetServer(onion)
+	if server != nil {
+		newStats := server.GetStatistics()
+		publishFn(event.NewEventList(ServerStatsUpdate, event.Identity, onion, TotalMessages, strconv.Itoa(newStats.TotalMessages), Connections, strconv.Itoa(newStats.TotalConnections)))
+	}
 }
 
 func (sf *ServersFunctionality) StopServer(onion string) {
@@ -195,10 +200,12 @@ func cacheForwardServerMetricUpdates() {
 			serverList := appServers.ListServers()
 			for _, serverOnion := range serverList {
 				server := appServers.GetServer(serverOnion)
-				newStats := server.GetStatistics()
-				if stats, ok := cache[serverOnion]; !ok || stats.TotalConnections != newStats.TotalConnections || stats.TotalMessages != newStats.TotalMessages {
-					cache[serverOnion] = newStats
-					publishFn(event.NewEventList(ServerStatsUpdate, event.Identity, serverOnion, TotalMessages, strconv.Itoa(newStats.TotalMessages), Connections, strconv.Itoa(newStats.TotalConnections)))
+				if running, err := server.CheckStatus(); running && err == nil {
+					newStats := server.GetStatistics()
+					if stats, ok := cache[serverOnion]; !ok || stats.TotalConnections != newStats.TotalConnections || stats.TotalMessages != newStats.TotalMessages {
+						cache[serverOnion] = newStats
+						publishFn(event.NewEventList(ServerStatsUpdate, event.Identity, serverOnion, TotalMessages, strconv.Itoa(newStats.TotalMessages), Connections, strconv.Itoa(newStats.TotalConnections)))
+					}
 				}
 			}
 		case <-killStatsUpdate:
