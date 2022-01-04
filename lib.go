@@ -8,16 +8,22 @@ import "C"
 
 import (
 	"crypto/rand"
-	constants2 "cwtch.im/cwtch/model/constants"
 	"encoding/json"
 	"fmt"
+
+	constants2 "cwtch.im/cwtch/model/constants"
+
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
+
+
 	// Import SQL Cipher
-	_ "github.com/mutecomm/go-sqlcipher/v4"
 	"os/user"
 	"runtime"
 	"strconv"
 	"strings"
 	"unsafe"
+
+	_ "github.com/mutecomm/go-sqlcipher/v4"
 
 	"cwtch.im/cwtch/app"
 	"cwtch.im/cwtch/event"
@@ -96,7 +102,6 @@ func StartCwtch(appDir string, torPath string) int {
 	if logLevel := os.Getenv("LOG_LEVEL"); strings.ToLower(logLevel) == "debug" {
 		log.SetLevel(log.LevelDebug)
 	}
-
 	log.Infof("StartCwtch(...)")
 	// Quick hack check that we're being called with the correct params
 	// On android a stale worker could be calling us with "last apps" directory. Best to abort fast so the app can make a new worker
@@ -877,6 +882,28 @@ func SetMessageAttribute(profileOnion string, conversationID int, channelID int,
 	err := profile.UpdateMessageAttribute(conversationID, channelID, messageID, attributeKey, attributeValue)
 	if err != nil {
 		log.Errorf("error updating message attribute: %v", err)
+	}
+}
+
+//export c_ChangePassword
+func c_ChangePassword(profile_ptr *C.char, profile_len C.int, oldpassword_ptr *C.char, oldpassword_len C.int,  newpassword_ptr *C.char, newpassword_len C.int,  newpassword_again_ptr *C.char, newpassword_again_len C.int) {
+	profileOnion := C.GoStringN(profile_ptr, profile_len)
+	oldPassword := C.GoStringN(oldpassword_ptr, oldpassword_len)
+	newPassword := C.GoStringN(newpassword_ptr, newpassword_len)
+	newPasswordAgain := C.GoStringN(newpassword_again_ptr, newpassword_again_len)
+	ChangePassword(profileOnion, oldPassword, newPassword, newPasswordAgain)
+}
+
+// ChangePassword provides a wrapper around profile.ChangePassword
+func ChangePassword(profileOnion string, oldPassword string, newPassword string, newPasswordAgain string) {
+	profile := application.GetPeer(profileOnion)
+	log.Infof("changing password for %v", profileOnion)
+	err := profile.ChangePassword(oldPassword, newPassword, newPasswordAgain)
+	log.Infof("change password result %v", err)
+	if err == nil {
+		eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: features.ConstructResponse("changepassword", constants.StatusSuccess).Error()}))
+	} else {
+		eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: features.ConstructResponse("changepassword", err.Error()).Error()}))
 	}
 }
 

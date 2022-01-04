@@ -1,21 +1,26 @@
 package utils
 
 import (
+	"encoding/json"
+	"strconv"
+
 	"cwtch.im/cwtch/app"
 	"cwtch.im/cwtch/app/plugins"
 	"cwtch.im/cwtch/model"
 	"cwtch.im/cwtch/model/attr"
 	"cwtch.im/cwtch/model/constants"
+	"cwtch.im/cwtch/peer"
 	"cwtch.im/cwtch/protocol/connections"
-	"encoding/json"
 	constants2 "git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
 	"git.openprivacy.ca/openprivacy/log"
-	"strconv"
+
 	"time"
+
+	"cwtch.im/cwtch/event"
+	"cwtch.im/cwtch/functionality/filesharing"
 )
-import "cwtch.im/cwtch/event"
 
 type EventProfileEnvelope struct {
 	Event   event.Event
@@ -96,26 +101,25 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			if e.Data[event.Created] == event.True {
 				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.Picture, ImageToString(NewImage(RandomProfileImage(onion), TypeImageDistro)))
 			}
-			if e.Data[event.Created] == event.True {
-				profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline, event.False)
-				eh.app.AddPeerPlugin(onion, plugins.CONNECTIONRETRY)
-				eh.app.AddPeerPlugin(onion, plugins.NETWORKCHECK)
 
-				// If the user has chosen to block unknown profiles
-				// then explicitly configure the protocol engine to do so..
-				if ReadGlobalSettings().BlockUnknownConnections {
-					profile.BlockUnknownConnections()
-				} else {
-					// For completeness
-					profile.AllowUnknownConnections()
-				}
+			profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline, event.False)
+			eh.app.AddPeerPlugin(onion, plugins.CONNECTIONRETRY)
+			eh.app.AddPeerPlugin(onion, plugins.NETWORKCHECK)
 
-				// Start up the Profile
-				profile.Listen()
-				profile.StartPeersConnections()
-				if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
-					profile.StartServerConnections()
-				}
+			// If the user has chosen to block unknown profiles
+			// then explicitly configure the protocol engine to do so..
+			if ReadGlobalSettings().BlockUnknownConnections {
+				profile.BlockUnknownConnections()
+			} else {
+				// For completeness
+				profile.AllowUnknownConnections()
+			}
+
+			// Start up the Profile
+			profile.Listen()
+			profile.StartPeersConnections()
+			if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
+				profile.StartServerConnections()
 			}
 
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
@@ -263,10 +267,16 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
 				if !exists {
 					ev.Event.Data["Nick"] = ev.Event.Data["RemotePeer"]
+					// If we dont have a name val for a peer, but they have sent us a message, we might be approved now, re-ask
+					profile.SendScopedZonedGetValToContact(ci.ID, attr.PublicScope, attr.ProfileZone, constants.Name)
+					profile.SendScopedZonedGetValToContact(ci.ID, attr.PublicScope, attr.ProfileZone, constants2.Picture)
 				}
 			}
 			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data["RemotePeer"])
 
+			if ci.Accepted {
+				handleImagePreviews(profile, &ev.Event, ci.ID, ci.ID)
+			}
 		case event.NewMessageFromGroup:
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
@@ -283,6 +293,10 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data[event.RemotePeer])
 			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
 			profile.SetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants2.Archived)), event.False)
+
+			if ci != nil && ci.Accepted {
+				handleImagePreviews(profile, &ev.Event, conversationID, ci.ID)
+			}
 		case event.PeerAcknowledgement:
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
 			if ci != nil && err == nil {
@@ -370,7 +384,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 
 			if exists && attr.IntoScope(scope) == attr.PublicScope {
 				zone, path := attr.ParseZone(path)
-				if _, err := profile.GetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(path))); err != nil {
+				if val, err := profile.GetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(path))); err != nil && val != "" {
 					// we have a locally set override, don't pass this remote set public scope update to UI
 					return ""
 				}
@@ -407,10 +421,10 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.GroupCreated, q)
 	eventBus.Subscribe(event.NewGroup, q)
 	eventBus.Subscribe(event.DeleteGroup, q)
-	eventBus.Subscribe(event.SendMessageToGroupError, q)
-	eventBus.Subscribe(event.SendMessageToPeerError, q)
 	eventBus.Subscribe(event.ServerStateChange, q)
 	eventBus.Subscribe(event.PeerStateChange, q)
+	eventBus.Subscribe(event.ChangePasswordSuccess, q)
+	eventBus.Subscribe(event.ChangePasswordError, q)
 	eventBus.Subscribe(event.NewRetValMessageFromPeer, q)
 	eventBus.Subscribe(event.ShareManifest, q)
 	eventBus.Subscribe(event.ManifestSizeReceived, q)
@@ -453,4 +467,29 @@ func getLastMessageTime(conversationMessages []model.ConversationMessage) int {
 		return 0
 	}
 	return int(time.Unix())
+}
+
+// handleImagePreviews checks settings and, if appropriate, auto-downloads any images
+func handleImagePreviews(profile peer.CwtchPeer, ev *event.Event, conversationID, senderID int) {
+	settings := ReadGlobalSettings()
+	fh, err := filesharing.PreviewFunctionalityGate(settings.Experiments)
+	if err == nil {
+		var cm model.MessageWrapper
+		err := json.Unmarshal([]byte(ev.Data[event.Data]), &cm)
+		if err == nil && cm.Overlay == model.OverlayFileSharing {
+			var fm filesharing.OverlayMessage
+			err = json.Unmarshal([]byte(cm.Data), &fm)
+			if err == nil {
+				if fm.ShouldAutoDL() {
+					basepath := settings.DownloadPath
+					fp, mp := filesharing.GenerateDownloadPath(basepath, fm.Name)
+					log.Debugf("autodownloading file!")
+					ev.Data["Auto"] = constants.True
+					mID, _ := strconv.Atoi(ev.Data["Index"])
+					profile.UpdateMessageAttribute(conversationID, 0, mID, constants.AttrDownloaded, constants.True)
+					fh.DownloadFile(profile, senderID, fp, mp, fm.FileKey())
+				}
+			}
+		}
+	}
 }
