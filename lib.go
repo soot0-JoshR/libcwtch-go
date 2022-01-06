@@ -10,16 +10,15 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	constants2 "cwtch.im/cwtch/model/constants"
 
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
 
-
 	// Import SQL Cipher
 	"os/user"
 	"runtime"
-	"strconv"
 	"strings"
 	"unsafe"
 
@@ -252,7 +251,7 @@ func ReconnectCwtchForeground() {
 	// populate profile list
 	peerList := application.ListProfiles()
 	for _, onion := range peerList {
-		eventHandler.Push(event.NewEvent(event.NewPeer, map[event.Field]string{event.Identity: onion, event.Created: event.False, "Reload": event.True}))
+		eventHandler.Push(event.NewEvent(event.NewPeer, map[event.Field]string{event.Identity: onion}))
 	}
 
 	settings := utils.ReadGlobalSettings()
@@ -487,6 +486,16 @@ func c_BlockContact(profilePtr *C.char, profileLen C.int, conversation_id C.int)
 func BlockContact(profileOnion string, conversationID int) {
 	profile := application.GetPeer(profileOnion)
 	profile.BlockConversation(conversationID)
+}
+
+//export c_UnblockContact
+func c_UnblockContact(profilePtr *C.char, profileLen C.int, conversation_id C.int) {
+	UnblockContact(C.GoStringN(profilePtr, profileLen), int(conversation_id))
+}
+
+func UnblockContact(profileOnion string, conversationID int) {
+	profile := application.GetPeer(profileOnion)
+	profile.UnblockConversation(conversationID)
 }
 
 //export c_GetMessage
@@ -886,7 +895,7 @@ func SetMessageAttribute(profileOnion string, conversationID int, channelID int,
 }
 
 //export c_ChangePassword
-func c_ChangePassword(profile_ptr *C.char, profile_len C.int, oldpassword_ptr *C.char, oldpassword_len C.int,  newpassword_ptr *C.char, newpassword_len C.int,  newpassword_again_ptr *C.char, newpassword_again_len C.int) {
+func c_ChangePassword(profile_ptr *C.char, profile_len C.int, oldpassword_ptr *C.char, oldpassword_len C.int, newpassword_ptr *C.char, newpassword_len C.int, newpassword_again_ptr *C.char, newpassword_again_len C.int) {
 	profileOnion := C.GoStringN(profile_ptr, profile_len)
 	oldPassword := C.GoStringN(oldpassword_ptr, oldpassword_len)
 	newPassword := C.GoStringN(newpassword_ptr, newpassword_len)
