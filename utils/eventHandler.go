@@ -53,6 +53,8 @@ func (eh *EventHandler) HandleApp(application app.Application) {
 	application.GetPrimaryBus().Subscribe(servers.ServerIntentUpdate, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(servers.ServerDeleted, eh.appBusQueue)
 	application.GetPrimaryBus().Subscribe(servers.ServerStatsUpdate, eh.appBusQueue)
+	application.GetPrimaryBus().Subscribe(event.StartingStorageMiragtion, eh.appBusQueue)
+	application.GetPrimaryBus().Subscribe(event.DoneStorageMigration, eh.appBusQueue)
 }
 
 func (eh *EventHandler) GetNextEvent() string {
