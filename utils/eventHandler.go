@@ -184,16 +184,9 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						state = connections.DISCONNECTED
 					}
 
-					// Resolve Conversation Auth State
-					// TODO: Align this with ACLs
-					authorization := model.AuthUnknown
-					if conversationInfo.Accepted {
-						authorization = model.AuthApproved
-					}
-
-					// If ACL has blocked conversation then hide them...
-					if acl, exists := conversationInfo.ACL[conversationInfo.Handle]; exists && acl.Blocked {
-						authorization = model.AuthBlocked
+					blocked := false
+					if conversationInfo.ACL[conversationInfo.Handle].Blocked {
+						blocked = true
 					}
 
 					// Check if we are a server...
@@ -208,19 +201,20 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					lastMessage, _ := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0, 1)
 
 					contacts = append(contacts, Contact{
-						Name:          name,
-						Identifier:    conversationInfo.ID,
-						Onion:         conversationInfo.Handle,
-						Status:        connections.ConnectionStateName[state],
-						Picture:       cpicPath,
-						Authorization: string(authorization),
-						SaveHistory:   saveHistory,
-						Messages:      count,
-						Unread:        0,
-						LastMessage:   strconv.Itoa(getLastMessageTime(lastMessage)),
-						IsGroup:       conversationInfo.IsGroup(),
-						GroupServer:   groupServer,
-						IsArchived:    isArchived == event.True,
+						Name:        name,
+						Identifier:  conversationInfo.ID,
+						Onion:       conversationInfo.Handle,
+						Status:      connections.ConnectionStateName[state],
+						Picture:     cpicPath,
+						Accepted:    conversationInfo.Accepted,
+						Blocked:     blocked,
+						SaveHistory: saveHistory,
+						Messages:    count,
+						Unread:      0,
+						LastMessage: strconv.Itoa(getLastMessageTime(lastMessage)),
+						IsGroup:     conversationInfo.IsGroup(),
+						GroupServer: groupServer,
+						IsArchived:  isArchived == event.True,
 					})
 				}
 			}
@@ -242,6 +236,9 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 
 // handleProfileEvent enriches Profile events so they are usable with out further data fetches
 func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
+	// cache of contact states to use to filter out events repeating known states
+	var contactStateCache = make(map[string]connections.ConnectionState)
+
 	if eh.app == nil {
 		log.Errorf("eh.app == nil in handleProfileEvent... this shouldnt happen?")
 	} else {
@@ -312,16 +309,14 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				log.Errorf("error fetching conversation info for %v %v", conversationID, err)
 			}
 
-			// Resolve Conversation Auth State
-			// TODO: Align this with ACLs
-			authorization := model.AuthUnknown
-			if conversationInfo.Accepted {
-				authorization = model.AuthApproved
+			blocked := constants.False
+			if conversationInfo.ACL[conversationInfo.Handle].Blocked {
+				blocked = constants.True
 			}
 
-			// If ACL has blocked conversation then hide them...
-			if acl, exists := conversationInfo.ACL[conversationInfo.Handle]; exists && acl.Blocked {
-				authorization = model.AuthBlocked
+			accepted := constants.False
+			if conversationInfo.Accepted {
+				accepted = constants.True
 			}
 
 			lastMessage, _ := profile.GetMostRecentMessages(conversationID, 0, 0, 1)
@@ -330,7 +325,8 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			ev.Event.Data["numMessages"] = strconv.Itoa(count)
 			ev.Event.Data["nick"] = conversationInfo.Handle
 			ev.Event.Data["status"] = connections.ConnectionStateName[profile.GetPeerState(conversationInfo.Handle)]
-			ev.Event.Data["authorization"] = string(authorization)
+			ev.Event.Data["accepted"] = accepted
+			ev.Event.Data["blocked"] = blocked
 			ev.Event.Data["loading"] = "false"
 			ev.Event.Data["lastMsgTime"] = strconv.Itoa(getLastMessageTime(lastMessage))
 		case event.GroupCreated:
@@ -351,6 +347,12 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			}
 		case event.PeerStateChange:
 			cxnState := connections.ConnectionStateToType()[ev.Event.Data[event.ConnectionState]]
+
+			// skip events the UI doesn't act on
+			if cxnState == connections.CONNECTING || cxnState == connections.CONNECTED {
+				return ""
+			}
+
 			contact, _ := profile.FetchConversationInfo(ev.Event.Data[event.RemotePeer])
 
 			if ev.Event.Data[event.RemotePeer] == profile.GetOnion() {
@@ -363,15 +365,33 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				return ""
 			}
 
+			// if we already know this state, suppress
+			if knownState, exists := contactStateCache[ev.Event.Data[event.RemotePeer]]; exists && cxnState == knownState {
+				return ""
+			}
+			contactStateCache[ev.Event.Data[event.RemotePeer]] = cxnState
+
 			if contact != nil {
 				// No enrichment needed
-				//uiManager.UpdateContactStatus(contact.Onion, int(cxnState), false)
 				if cxnState == connections.AUTHENTICATED {
 					// if known and authed, get vars
 					profile.SendScopedZonedGetValToContact(contact.ID, attr.PublicScope, attr.ProfileZone, constants.Name)
 					profile.SendScopedZonedGetValToContact(contact.ID, attr.PublicScope, attr.ProfileZone, constants2.Picture)
 				}
 			}
+		case event.ServerStateChange:
+			cxnState := connections.ConnectionStateToType()[ev.Event.Data[event.ConnectionState]]
+
+			// skip events the UI doesn't act on
+			if cxnState == connections.CONNECTING || cxnState == connections.CONNECTED {
+				return ""
+			}
+
+			// if we already know this state, suppress
+			if knownState, exists := contactStateCache[ev.Event.Data[event.RemotePeer]]; exists && cxnState == knownState {
+				return ""
+			}
+			contactStateCache[ev.Event.Data[event.RemotePeer]] = cxnState
 
 		case event.NewRetValMessageFromPeer:
 			// auto handled event means the setting is already done, we're just deciding if we need to tell the UI
