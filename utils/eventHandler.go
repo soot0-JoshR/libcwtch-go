@@ -180,8 +180,13 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						isArchived = event.False
 					}
 
-					// Resolve Peer State (should probably be DISCONNECTED)
-					state := profile.GetPeerState(conversationInfo.Handle)
+					groupServer, _ := conversationInfo.GetAttribute(attr.LocalScope, attr.LegacyGroupZone, constants.GroupServer)
+
+					stateHandle := conversationInfo.Handle
+					if conversationInfo.IsGroup() {
+						stateHandle = groupServer
+					}
+					state := profile.GetPeerState(stateHandle)
 					if !set {
 						state = connections.DISCONNECTED
 					}
@@ -190,9 +195,6 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					if conversationInfo.ACL[conversationInfo.Handle].Blocked {
 						blocked = true
 					}
-
-					// Check if we are a server...
-					groupServer, _ := conversationInfo.GetAttribute(attr.LocalScope, attr.LegacyGroupZone, constants.GroupServer)
 
 					// Fetch the message count, and the time of the most recent message
 					count, err := profile.GetChannelMessageCount(conversationInfo.ID, 0)
