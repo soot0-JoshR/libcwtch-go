@@ -119,7 +119,7 @@ func StartCwtch(appDir string, torPath string) int {
 }
 
 func _startCwtch(appDir string, torPath string) {
-	log.Infof("application: %v eventHandler: %v acn: %v", application, eventHandler, globalACN)
+	log.Infof("application: %v eventHandler: %v", application, eventHandler)
 
 	if application != nil {
 		log.Infof("_startCwtch detected existing application; resuming instead of relaunching")

@@ -40,7 +40,7 @@ type GlobalSettings struct {
 	UIColumnModePortrait    string
 	UIColumnModeLandscape   string
 	DownloadPath            string
-	AllowAdvancedTorConfig	bool
+	AllowAdvancedTorConfig  bool
 	CustomTorrc             string
 	UseCustomTorrc          bool
 	UseExternalTor          bool
