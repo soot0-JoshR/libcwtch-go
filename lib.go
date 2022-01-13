@@ -228,6 +228,10 @@ func _startCwtch(appDir string, torPath string) {
 	LaunchServers()
 
 	// Send global settings to the UI...
+	if application == nil {
+		log.Errorf("startCwtch: primary application object has gone away. assuming application is closing.")
+		return
+	}
 	application.GetPrimaryBus().Publish(event.NewEvent(utils.UpdateGlobalSettings, map[event.Field]string{event.Data: string(settingsJson)}))
 	log.Infof("libcwtch-go application launched")
 	application.GetPrimaryBus().Publish(event.NewEvent(utils.CwtchStarted, map[event.Field]string{}))

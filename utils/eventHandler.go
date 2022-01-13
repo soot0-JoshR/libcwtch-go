@@ -88,6 +88,10 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 		case event.NewPeer:
 			onion := e.Data[event.Identity]
 			profile := eh.app.GetPeer(e.Data[event.Identity])
+			if profile == nil {
+				log.Errorf("NewPeer: skipping profile initialization. this should only happen when the app is rapidly opened+closed (eg during testing)")
+				break
+			}
 			log.Debug("New Peer Event: %v", e)
 
 			if e.Data["Reload"] != event.True {
@@ -426,6 +430,10 @@ func unwrap(original *EventProfileEnvelope) *event.Event {
 
 func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus := eh.app.GetEventBus(onion)
+	// if eventBus == nil {
+	// 	log.Errorf("startHandlingPeer: eventBus was nil; skipping contact initialization. this should only happen when the app is rapidly opened+closed (eg during testing)")
+	// 	return
+	// }
 	q := event.NewQueue()
 
 	// eventBus.Subscribe(event.NetworkStatus, q)
