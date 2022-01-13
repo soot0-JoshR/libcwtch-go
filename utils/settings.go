@@ -40,6 +40,12 @@ type GlobalSettings struct {
 	UIColumnModePortrait    string
 	UIColumnModeLandscape   string
 	DownloadPath            string
+	AllowAdvancedTorConfig  bool
+	CustomTorrc             string
+	UseCustomTorrc          bool
+	UseExternalTor          bool
+	CustomSocksPort         int
+	CustomControlPort       int
 }
 
 var DefaultGlobalSettings = GlobalSettings{
@@ -55,6 +61,11 @@ var DefaultGlobalSettings = GlobalSettings{
 	UIColumnModePortrait:    "DualpaneMode.Single",
 	UIColumnModeLandscape:   "DualpaneMode.CopyPortrait",
 	DownloadPath:            "",
+	AllowAdvancedTorConfig:  false,
+	CustomTorrc:             "",
+	UseCustomTorrc:          false,
+	CustomSocksPort:         -1,
+	CustomControlPort:       -1,
 }
 
 func InitGlobalSettingsFile(directory string, password string) error {

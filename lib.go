@@ -56,8 +56,9 @@ const (
 
 var application app.Application
 var globalAppDir string
+var globalTorPath string
 var eventHandler *utils.EventHandler
-var globalACN connectivity.ACN
+var globalACN connectivity.ProxyACN
 
 // ChatMessage API currently not officially documented, see
 // https://git.openprivacy.ca/cwtch.im/secure-development-handbook/issues/3
@@ -118,7 +119,7 @@ func StartCwtch(appDir string, torPath string) int {
 }
 
 func _startCwtch(appDir string, torPath string) {
-	log.Infof("application: %v eventHandler: %v acn: %v", application, eventHandler, globalACN)
+	log.Infof("application: %v eventHandler: %v", application, eventHandler)
 
 	if application != nil {
 		log.Infof("_startCwtch detected existing application; resuming instead of relaunching")
@@ -157,17 +158,6 @@ func _startCwtch(appDir string, torPath string) {
 
 	log.Infof("Loading Cwtch Directory %v and tor path: %v", appDir, torPath)
 
-	mrand.Seed(int64(time.Now().Nanosecond()))
-	port := mrand.Intn(1000) + 9600
-	controlPort := port + 1
-
-	// generate a random password (actually random, stored in memory, for the control port)
-	key := make([]byte, 64)
-	_, err = rand.Read(key)
-	if err != nil {
-		panic(err)
-	}
-
 	log.Infof("making directory %v", appDir)
 	err = os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
 
@@ -177,24 +167,13 @@ func _startCwtch(appDir string, torPath string) {
 		return
 	}
 
-	err = tor.NewTorrc().WithSocksPort(port).WithOnionTrafficOnly().WithControlPort(controlPort).WithHashedPassword(base64.StdEncoding.EncodeToString(key)).Build(filepath.Join(appDir, "tor", "torrc"))
-
-	if err != nil {
-		log.Errorf("error constructing torrc: %v", err)
-		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
-		return
-	}
-
-	acn, err := tor.NewTorACNWithAuth(appDir, torPath, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
-	if err != nil {
-		log.Errorf("Error connecting to Tor replacing with ErrorACN: %v\n", err)
-		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
-		return
-	}
+	// Allow the user of a custom torrc
+	settings := utils.ReadGlobalSettings()
 	globalAppDir = appDir
-	globalACN = acn
-	application = app.NewApp(acn, appDir)
-	servers.InitServers(acn, appDir, eventHandler.Push)
+	globalTorPath = torPath
+	globalACN = connectivity.NewProxyACN(buildACN(*settings, globalTorPath, globalAppDir))
+	application = app.NewApp(&globalACN, appDir)
+	servers.InitServers(&globalACN, appDir, eventHandler.Push)
 
 	eventHandler.HandleApp(application)
 
@@ -215,7 +194,7 @@ func _startCwtch(appDir string, torPath string) {
 		event.ManifestReceived,
 		event.FileDownloaded,
 	}
-	settings := utils.ReadGlobalSettings()
+
 	settingsJson, _ := json.Marshal(settings)
 
 	application.LoadProfiles(constants.DefactoPasswordForUnencryptedProfiles)
@@ -236,6 +215,62 @@ func _startCwtch(appDir string, torPath string) {
 	log.Infof("libcwtch-go application launched")
 	application.GetPrimaryBus().Publish(event.NewEvent(utils.CwtchStarted, map[event.Field]string{}))
 	application.QueryACNVersion()
+}
+
+func buildACN(settings utils.GlobalSettings, torPath string, appDir string) connectivity.ACN {
+
+	mrand.Seed(int64(time.Now().Nanosecond()))
+	socksPort := mrand.Intn(1000) + 9600
+	controlPort := socksPort + 1
+
+	// generate a random password (actually random, stored in memory, for the control port)
+	key := make([]byte, 64)
+	_, err := rand.Read(key)
+	if err != nil {
+		panic(err)
+	}
+
+	log.Infof("making directory %v", appDir)
+	err = os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
+
+	if err != nil {
+		log.Errorf("error creating tor data directory: %v. Aborting app start up", err)
+		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
+		return &connectivity.ErrorACN{}
+	}
+
+	if settings.AllowAdvancedTorConfig {
+		controlPort = settings.CustomControlPort
+		socksPort = settings.CustomSocksPort
+	}
+
+	torrc := tor.NewTorrc().WithSocksPort(socksPort).WithOnionTrafficOnly().WithControlPort(controlPort).WithHashedPassword(base64.StdEncoding.EncodeToString(key))
+	if settings.UseCustomTorrc {
+		customTorrc := settings.CustomTorrc
+		torrc.WithCustom(strings.Split(customTorrc, "\n"))
+	} else {
+		// Fallback to showing the freshly generated torrc for this session.
+		settings.CustomTorrc = torrc.Preview()
+		settings.CustomControlPort = controlPort
+		settings.CustomSocksPort = socksPort
+		utils.WriteGlobalSettings(settings)
+	}
+
+	err = torrc.Build(filepath.Join(appDir, "tor", "torrc"))
+
+	if err != nil {
+		log.Errorf("error constructing torrc: %v", err)
+		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
+		return &connectivity.ErrorACN{}
+	}
+
+	acn, err := tor.NewTorACNWithAuth(appDir, torPath, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
+	if err != nil {
+		log.Errorf("Error connecting to Tor replacing with ErrorACN: %v\n", err)
+		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
+		acn = &connectivity.ErrorACN{}
+	}
+	return acn
 }
 
 //export c_ReconnectCwtchForeground
@@ -337,7 +372,7 @@ func SendAppEvent(eventJson string) {
 
 		sh, err := servers.ExperimentGate(settings.Experiments)
 		if err == nil {
-			servers.InitServers(globalACN, globalAppDir, eventHandler.Push)
+			servers.InitServers(&globalACN, globalAppDir, eventHandler.Push)
 			LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
 			if !servers.Enabled() {
 				sh.Enable()
@@ -740,8 +775,8 @@ func c_ResetTor() {
 }
 
 func ResetTor() {
-	log.Infof("Restarting...")
-	globalACN.Restart()
+	log.Infof("Replacing ACN with new Tor...")
+	globalACN.ReplaceACN(buildACN(*utils.ReadGlobalSettings(), globalTorPath, globalAppDir))
 	log.Infof("Restarted")
 }
 
@@ -927,7 +962,7 @@ func c_ShutdownCwtch() {
 
 // ShutdownCwtch is a safe way to shutdown any active cwtch applications and associated ACNs
 func ShutdownCwtch() {
-	if application != nil && globalACN != nil {
+	if application != nil {
 		// Kill the isolate
 		eventHandler.Push(event.NewEvent(event.Shutdown, map[event.Field]string{}))
 
@@ -940,7 +975,6 @@ func ShutdownCwtch() {
 		log.Infof("Library Shutdown Complete!")
 		// do not remove - important for state checks elsewhere
 		application = nil
-		globalACN = nil
 		eventHandler = nil
 	}
 }
