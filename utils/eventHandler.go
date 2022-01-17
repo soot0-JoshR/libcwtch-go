@@ -429,7 +429,7 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	q := event.NewQueue()
 
 	// eventBus.Subscribe(event.NetworkStatus, q)
-
+	eventBus.Subscribe(event.ACNInfo, q)
 	eventBus.Subscribe(event.NewMessageFromPeer, q)
 	eventBus.Subscribe(event.UpdatedProfileAttribute, q)
 	eventBus.Subscribe(event.PeerAcknowledgement, q)
