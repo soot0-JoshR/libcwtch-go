@@ -110,7 +110,7 @@ func (sf *ServersFunctionality) Enable() {
 
 func (sf *ServersFunctionality) LoadServers(password string) ([]string, error) {
 	servers, err := appServers.LoadServers(password)
-	// server:1.3/libcwtch-go:1.4 accidentely enabled monitor logging by default. make sure it's turned off
+	// server:1.3/libcwtch-go:1.4 accidentally enabled monitor logging by default. make sure it's turned off
 	for _, onion := range servers {
 		server := appServers.GetServer(onion)
 		server.SetMonitorLogging(false)

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	path "path/filepath"
 	"sync"
 
 	"cwtch.im/cwtch/event"
@@ -9,7 +10,6 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
-	"path"
 
 	"git.openprivacy.ca/openprivacy/log"
 )
@@ -46,6 +46,8 @@ type GlobalSettings struct {
 	UseExternalTor          bool
 	CustomSocksPort         int
 	CustomControlPort       int
+	UseTorCache             bool
+	TorCacheDir             string
 }
 
 var DefaultGlobalSettings = GlobalSettings{
@@ -66,6 +68,8 @@ var DefaultGlobalSettings = GlobalSettings{
 	UseCustomTorrc:          false,
 	CustomSocksPort:         -1,
 	CustomControlPort:       -1,
+	UseTorCache:             false,
+	TorCacheDir:             "",
 }
 
 func InitGlobalSettingsFile(directory string, password string) error {

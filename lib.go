@@ -10,6 +10,8 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	path "path/filepath"
 	"strconv"
 
 	constants2 "cwtch.im/cwtch/model/constants"
@@ -41,7 +43,6 @@ import (
 	"encoding/base64"
 	mrand "math/rand"
 	"os"
-	"path/filepath"
 	"time"
 
 	"git.openprivacy.ca/openprivacy/connectivity/tor"
@@ -140,7 +141,7 @@ func _startCwtch(appDir string, torPath string) {
 	if appDir == "~" {
 		appDir = homeDir
 	} else if strings.HasPrefix(appDir, "~/") {
-		appDir = filepath.Join(homeDir, appDir[2:])
+		appDir = path.Join(homeDir, appDir[2:])
 	}
 
 	// Ensure that the application directory exists...and then initialize settings..
@@ -159,7 +160,7 @@ func _startCwtch(appDir string, torPath string) {
 	log.Infof("Loading Cwtch Directory %v and tor path: %v", appDir, torPath)
 
 	log.Infof("making directory %v", appDir)
-	err = os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
+	err = os.MkdirAll(path.Join(appDir, "tor"), 0700)
 
 	if err != nil {
 		log.Errorf("error creating tor data directory: %v. Aborting app start up", err)
@@ -195,6 +196,8 @@ func _startCwtch(appDir string, torPath string) {
 		event.FileDownloaded,
 	}
 
+	// Settings may have changed...
+	settings = utils.ReadGlobalSettings()
 	settingsJson, _ := json.Marshal(settings)
 
 	application.LoadProfiles(constants.DefactoPasswordForUnencryptedProfiles)
@@ -227,7 +230,7 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 	}
 
 	log.Infof("making directory %v", appDir)
-	err = os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
+	err = os.MkdirAll(path.Join(appDir, "tor"), 0700)
 
 	if err != nil {
 		log.Errorf("error creating tor data directory: %v. Aborting app start up", err)
@@ -252,7 +255,7 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 		utils.WriteGlobalSettings(settings)
 	}
 
-	err = torrc.Build(filepath.Join(appDir, "tor", "torrc"))
+	err = torrc.Build(path.Join(appDir, "tor", "torrc"))
 
 	if err != nil {
 		log.Errorf("error constructing torrc: %v", err)
@@ -260,7 +263,32 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 		return &connectivity.ErrorACN{}
 	}
 
-	acn, err := tor.NewTorACNWithAuth(appDir, torPath, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
+	dataDir := settings.TorCacheDir
+	if !settings.UseTorCache {
+
+		// purge data dir directories if we are not using them for a cache
+		torDir := path.Join(appDir, "tor")
+		files, err := path.Glob(path.Join(torDir, "data-dir-*"))
+		if err != nil {
+			log.Errorf("could not construct filesystem glob: %v", err)
+		}
+		for _, f := range files {
+			if err := os.RemoveAll(f); err != nil {
+				log.Errorf("could not remove data-dir: %v", err)
+			}
+		}
+
+		if dataDir, err = ioutil.TempDir(torDir, "data-dir-"); err != nil {
+			eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
+			return &connectivity.ErrorACN{}
+		}
+	}
+
+	// Persist Current Data Dir as Tor Cache...
+	settings.TorCacheDir = dataDir
+	utils.WriteGlobalSettings(settings)
+
+	acn, err := tor.NewTorACNWithAuth(appDir, torPath, dataDir, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
 	if err != nil {
 		log.Errorf("Error connecting to Tor replacing with ErrorACN: %v\n", err)
 		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
@@ -296,7 +324,7 @@ func ReconnectCwtchForeground() {
 		profile := application.GetPeer(profileOnion)
 		conversations, _ := profile.FetchConversations()
 		for _, conversation := range conversations {
-			if (conversation.IsGroup() && groupHandler != nil) || conversation.IsServer() == false {
+			if (conversation.IsGroup() && groupHandler != nil) || !conversation.IsServer() {
 				totalMessages, _ := profile.GetChannelMessageCount(conversation.ID, 0)
 				eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
 					event.Identity:       profileOnion,
