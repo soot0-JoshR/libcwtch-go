@@ -1,6 +1,7 @@
 package utils
 
 import (
+	path "path/filepath"
 	"sync"
 
 	"cwtch.im/cwtch/event"
@@ -9,7 +10,6 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
-	"path"
 
 	"git.openprivacy.ca/openprivacy/log"
 )

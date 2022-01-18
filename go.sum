@@ -26,8 +26,8 @@ git.openprivacy.ca/openprivacy/bine v0.0.4/go.mod h1:13ZqhKyqakDsN/ZkQkIGNULsmLy
 git.openprivacy.ca/openprivacy/connectivity v1.5.0/go.mod h1:UjQiGBnWbotmBzIw59B8H6efwDadjkKzm3RPT1UaIRw=
 git.openprivacy.ca/openprivacy/connectivity v1.6.0/go.mod h1:UjQiGBnWbotmBzIw59B8H6efwDadjkKzm3RPT1UaIRw=
 git.openprivacy.ca/openprivacy/connectivity v1.7.0/go.mod h1:UjQiGBnWbotmBzIw59B8H6efwDadjkKzm3RPT1UaIRw=
-git.openprivacy.ca/openprivacy/connectivity v1.8.0 h1:/jnc/2LuUpli2NgeLw6zOAVESHrz5mr10kDCQHyZ7R4=
-git.openprivacy.ca/openprivacy/connectivity v1.8.0/go.mod h1:UjQiGBnWbotmBzIw59B8H6efwDadjkKzm3RPT1UaIRw=
+git.openprivacy.ca/openprivacy/connectivity v1.8.1 h1:OjWy+JTAvlrstY8PnGPBp7Ho04JaKHaQ+YdoLwSdaCo=
+git.openprivacy.ca/openprivacy/connectivity v1.8.1/go.mod h1:UjQiGBnWbotmBzIw59B8H6efwDadjkKzm3RPT1UaIRw=
 git.openprivacy.ca/openprivacy/log v1.0.2/go.mod h1:gGYK8xHtndRLDymFtmjkG26GaMQNgyhioNS82m812Iw=
 git.openprivacy.ca/openprivacy/log v1.0.3 h1:E/PMm4LY+Q9s3aDpfySfEDq/vYQontlvNj/scrPaga0=
 git.openprivacy.ca/openprivacy/log v1.0.3/go.mod h1:gGYK8xHtndRLDymFtmjkG26GaMQNgyhioNS82m812Iw=

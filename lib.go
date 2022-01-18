@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"path"
+	path "path/filepath"
 	"strconv"
 
 	constants2 "cwtch.im/cwtch/model/constants"
@@ -43,7 +43,6 @@ import (
 	"encoding/base64"
 	mrand "math/rand"
 	"os"
-	"path/filepath"
 	"time"
 
 	"git.openprivacy.ca/openprivacy/connectivity/tor"
@@ -142,7 +141,7 @@ func _startCwtch(appDir string, torPath string) {
 	if appDir == "~" {
 		appDir = homeDir
 	} else if strings.HasPrefix(appDir, "~/") {
-		appDir = filepath.Join(homeDir, appDir[2:])
+		appDir = path.Join(homeDir, appDir[2:])
 	}
 
 	// Ensure that the application directory exists...and then initialize settings..
@@ -161,7 +160,7 @@ func _startCwtch(appDir string, torPath string) {
 	log.Infof("Loading Cwtch Directory %v and tor path: %v", appDir, torPath)
 
 	log.Infof("making directory %v", appDir)
-	err = os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
+	err = os.MkdirAll(path.Join(appDir, "tor"), 0700)
 
 	if err != nil {
 		log.Errorf("error creating tor data directory: %v. Aborting app start up", err)
@@ -231,7 +230,7 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 	}
 
 	log.Infof("making directory %v", appDir)
-	err = os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
+	err = os.MkdirAll(path.Join(appDir, "tor"), 0700)
 
 	if err != nil {
 		log.Errorf("error creating tor data directory: %v. Aborting app start up", err)
@@ -256,7 +255,7 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 		utils.WriteGlobalSettings(settings)
 	}
 
-	err = torrc.Build(filepath.Join(appDir, "tor", "torrc"))
+	err = torrc.Build(path.Join(appDir, "tor", "torrc"))
 
 	if err != nil {
 		log.Errorf("error constructing torrc: %v", err)
@@ -269,7 +268,7 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 
 		// purge data dir directories if we are not using them for a cache
 		torDir := path.Join(appDir, "tor")
-		files, err := filepath.Glob(path.Join(torDir, "data-dir-*"))
+		files, err := path.Glob(path.Join(torDir, "data-dir-*"))
 		if err != nil {
 			log.Errorf("could not construct filesystem glob: %v", err)
 		}
