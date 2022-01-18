@@ -10,6 +10,8 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"path"
 	"strconv"
 
 	constants2 "cwtch.im/cwtch/model/constants"
@@ -195,6 +197,8 @@ func _startCwtch(appDir string, torPath string) {
 		event.FileDownloaded,
 	}
 
+	// Settings may have changed...
+	settings = utils.ReadGlobalSettings()
 	settingsJson, _ := json.Marshal(settings)
 
 	application.LoadProfiles(constants.DefactoPasswordForUnencryptedProfiles)
@@ -260,7 +264,32 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 		return &connectivity.ErrorACN{}
 	}
 
-	acn, err := tor.NewTorACNWithAuth(appDir, torPath, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
+	dataDir := settings.TorCacheDir
+	if !settings.UseTorCache {
+
+		// purge data dir directories if we are not using them for a cache
+		torDir := path.Join(appDir, "tor")
+		files, err := filepath.Glob(path.Join(torDir, "data-dir-*"))
+		if err != nil {
+			log.Errorf("could not construct filesystem glob: %v", err)
+		}
+		for _, f := range files {
+			if err := os.RemoveAll(f); err != nil {
+				log.Errorf("could not remove data-dir: %v", err)
+			}
+		}
+
+		if dataDir, err = ioutil.TempDir(torDir, "data-dir-"); err != nil {
+			eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
+			return &connectivity.ErrorACN{}
+		}
+	}
+
+	// Persist Current Data Dir as Tor Cache...
+	settings.TorCacheDir = dataDir
+	utils.WriteGlobalSettings(settings)
+
+	acn, err := tor.NewTorACNWithAuth(appDir, torPath, dataDir, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
 	if err != nil {
 		log.Errorf("Error connecting to Tor replacing with ErrorACN: %v\n", err)
 		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
@@ -296,7 +325,7 @@ func ReconnectCwtchForeground() {
 		profile := application.GetPeer(profileOnion)
 		conversations, _ := profile.FetchConversations()
 		for _, conversation := range conversations {
-			if (conversation.IsGroup() && groupHandler != nil) || conversation.IsServer() == false {
+			if (conversation.IsGroup() && groupHandler != nil) || !conversation.IsServer() {
 				totalMessages, _ := profile.GetChannelMessageCount(conversation.ID, 0)
 				eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
 					event.Identity:       profileOnion,
