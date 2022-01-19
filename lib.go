@@ -800,7 +800,15 @@ func c_ResetTor() {
 
 func ResetTor() {
 	log.Infof("Replacing ACN with new Tor...")
-	globalACN.ReplaceACN(buildACN(*utils.ReadGlobalSettings(), globalTorPath, globalAppDir))
+	settings := utils.ReadGlobalSettings()
+	log.Infof("Settings on Reset: %v", settings)
+	globalACN.Close() // we need to close first if dateDir is the same, otherwise buildACN can't launch tor.
+	globalACN.ReplaceACN(buildACN(*settings, globalTorPath, globalAppDir))
+
+	// We need to update settings on reset as buildACN can alter settings, otherwise the next reset will be broken...
+	settings = utils.ReadGlobalSettings()
+	settingsJson, _ := json.Marshal(settings)
+	application.GetPrimaryBus().Publish(event.NewEvent(utils.UpdateGlobalSettings, map[event.Field]string{event.Data: string(settingsJson)}))
 	log.Infof("Restarted")
 }
 
