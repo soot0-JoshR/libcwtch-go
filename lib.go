@@ -573,6 +573,7 @@ type EnhancedMessage struct {
 	model.Message
 	ID           int // the actual ID of the message in the database (not the row number)
 	LocalIndex   int // local index in the DB (row #). Can be empty (most calls supply it) but lookup by hash will fill it
+	ContentHash  string
 	ContactImage string
 	Attributes   map[string]string
 }
@@ -599,6 +600,7 @@ func GetMessage(profileOnion string, conversationID int, messageIndex int) strin
 			message.ID = messages[0].ID
 			message.Attributes = messages[0].Attr
 			message.ContactImage = utils.RandomProfileImage(message.PeerID)
+			message.ContentHash = model.CalculateContentHash(messages[0].Attr[constants2.AttrAuthor], messages[0].Body)
 		}
 	}
 	bytes, _ := json.Marshal(message)
@@ -634,6 +636,7 @@ func GetMessageByID(profileOnion string, conversationID int, messageID int) stri
 			message.ID = messageID
 			message.Attributes = attr
 			message.ContactImage = utils.RandomProfileImage(message.PeerID)
+			message.ContentHash = model.CalculateContentHash(attr[constants2.AttrAuthor], dbmessage)
 		}
 	}
 	bytes, _ := json.Marshal(message)
@@ -668,6 +671,7 @@ func GetMessagesByContentHash(profileOnion string, handle int, contentHash strin
 				message.Attributes = messages[0].Attr
 				message.ContactImage = utils.RandomProfileImage(message.PeerID)
 				message.LocalIndex = offset
+				message.ContentHash = contentHash
 			} else {
 				log.Errorf("error fetching local index {} ", err)
 			}
