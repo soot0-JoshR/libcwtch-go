@@ -572,6 +572,8 @@ func c_GetMessage(profile_ptr *C.char, profile_len C.int, conversation_id C.int,
 type EnhancedMessage struct {
 	model.Message
 	ID           int // the actual ID of the message in the database (not the row number)
+	LocalIndex   int // local index in the DB (row #). Can be empty (most calls supply it) but lookup by hash will fill it
+	ContentHash  string
 	ContactImage string
 	Attributes   map[string]string
 }
@@ -598,6 +600,7 @@ func GetMessage(profileOnion string, conversationID int, messageIndex int) strin
 			message.ID = messages[0].ID
 			message.Attributes = messages[0].Attr
 			message.ContactImage = utils.RandomProfileImage(message.PeerID)
+			message.ContentHash = model.CalculateContentHash(messages[0].Attr[constants2.AttrAuthor], messages[0].Body)
 		}
 	}
 	bytes, _ := json.Marshal(message)
@@ -611,7 +614,7 @@ func c_GetMessageByID(profile_ptr *C.char, profile_len C.int, conversation_id C.
 	return C.CString(GetMessageByID(profile, int(conversation_id), int(message_index)))
 }
 
-func GetMessageByID(profileOnion string, conversationID int, messageIndex int) string {
+func GetMessageByID(profileOnion string, conversationID int, messageID int) string {
 	var message EnhancedMessage
 	// There is an edge case that can happen on Android when the app is shutdown while fetching messages...
 	// The worker threads that are spawned can become activated again when the app is opened attempt to finish their job...
@@ -620,7 +623,7 @@ func GetMessageByID(profileOnion string, conversationID int, messageIndex int) s
 	// these requests complete almost immediately v.s. being stalled for seconds to minutes on large groups.
 	if application != nil {
 		profile := application.GetPeer(profileOnion)
-		dbmessage, attr, err := profile.GetChannelMessage(conversationID, 0, messageIndex)
+		dbmessage, attr, err := profile.GetChannelMessage(conversationID, 0, messageID)
 		if err == nil {
 			time, _ := time.Parse(time.RFC3339Nano, attr[constants2.AttrSentTimestamp])
 			message.Message = model.Message{
@@ -630,9 +633,10 @@ func GetMessageByID(profileOnion string, conversationID int, messageIndex int) s
 				PeerID:       attr[constants2.AttrAuthor],
 				Timestamp:    time,
 			}
-			message.ID = messageIndex
+			message.ID = messageID
 			message.Attributes = attr
 			message.ContactImage = utils.RandomProfileImage(message.PeerID)
+			message.ContentHash = model.CalculateContentHash(attr[constants2.AttrAuthor], dbmessage)
 		}
 	}
 	bytes, _ := json.Marshal(message)
@@ -648,7 +652,7 @@ func c_GetMessagesByContentHash(profile_ptr *C.char, profile_len C.int, conversa
 }
 
 func GetMessagesByContentHash(profileOnion string, handle int, contentHash string) string {
-	var indexedMessages []model.LocallyIndexedMessage
+	var message EnhancedMessage
 	if application != nil {
 		profile := application.GetPeer(profileOnion)
 		offset, err := profile.GetChannelMessageByContentHash(handle, 0, contentHash)
@@ -656,21 +660,24 @@ func GetMessagesByContentHash(profileOnion string, handle int, contentHash strin
 			messages, err := profile.GetMostRecentMessages(handle, 0, offset, 1)
 			if err == nil {
 				time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
-				msg := model.Message{
+				message.Message = model.Message{
 					Message:      messages[0].Body,
 					Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
 					Error:        messages[0].Attr[constants2.AttrErr],
 					PeerID:       messages[0].Attr[constants2.AttrAuthor],
 					Timestamp:    time,
 				}
-				// TODO this is mostly unused at this point, consider cleaning is up in 1.6
-				indexedMessages = append(indexedMessages, model.LocallyIndexedMessage{LocalIndex: offset, Message: msg})
+				message.ID = messages[0].ID
+				message.Attributes = messages[0].Attr
+				message.ContactImage = utils.RandomProfileImage(message.PeerID)
+				message.LocalIndex = offset
+				message.ContentHash = contentHash
 			} else {
 				log.Errorf("error fetching local index {} ", err)
 			}
 		}
 	}
-	bytes, _ := json.Marshal(indexedMessages)
+	bytes, _ := json.Marshal(message)
 	return string(bytes)
 }
 
