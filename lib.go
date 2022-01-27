@@ -10,6 +10,8 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	path "path/filepath"
 	"strconv"
 
 	constants2 "cwtch.im/cwtch/model/constants"
@@ -41,7 +43,6 @@ import (
 	"encoding/base64"
 	mrand "math/rand"
 	"os"
-	"path/filepath"
 	"time"
 
 	"git.openprivacy.ca/openprivacy/connectivity/tor"
@@ -140,7 +141,7 @@ func _startCwtch(appDir string, torPath string) {
 	if appDir == "~" {
 		appDir = homeDir
 	} else if strings.HasPrefix(appDir, "~/") {
-		appDir = filepath.Join(homeDir, appDir[2:])
+		appDir = path.Join(homeDir, appDir[2:])
 	}
 
 	// Ensure that the application directory exists...and then initialize settings..
@@ -159,7 +160,7 @@ func _startCwtch(appDir string, torPath string) {
 	log.Infof("Loading Cwtch Directory %v and tor path: %v", appDir, torPath)
 
 	log.Infof("making directory %v", appDir)
-	err = os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
+	err = os.MkdirAll(path.Join(appDir, "tor"), 0700)
 
 	if err != nil {
 		log.Errorf("error creating tor data directory: %v. Aborting app start up", err)
@@ -195,6 +196,8 @@ func _startCwtch(appDir string, torPath string) {
 		event.FileDownloaded,
 	}
 
+	// Settings may have changed...
+	settings = utils.ReadGlobalSettings()
 	settingsJson, _ := json.Marshal(settings)
 
 	application.LoadProfiles(constants.DefactoPasswordForUnencryptedProfiles)
@@ -231,7 +234,7 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 	}
 
 	log.Infof("making directory %v", appDir)
-	err = os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
+	err = os.MkdirAll(path.Join(appDir, "tor"), 0700)
 
 	if err != nil {
 		log.Errorf("error creating tor data directory: %v. Aborting app start up", err)
@@ -256,7 +259,7 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 		utils.WriteGlobalSettings(settings)
 	}
 
-	err = torrc.Build(filepath.Join(appDir, "tor", "torrc"))
+	err = torrc.Build(path.Join(appDir, "tor", "torrc"))
 
 	if err != nil {
 		log.Errorf("error constructing torrc: %v", err)
@@ -264,7 +267,32 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 		return &connectivity.ErrorACN{}
 	}
 
-	acn, err := tor.NewTorACNWithAuth(appDir, torPath, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
+	dataDir := settings.TorCacheDir
+	if !settings.UseTorCache {
+
+		// purge data dir directories if we are not using them for a cache
+		torDir := path.Join(appDir, "tor")
+		files, err := path.Glob(path.Join(torDir, "data-dir-*"))
+		if err != nil {
+			log.Errorf("could not construct filesystem glob: %v", err)
+		}
+		for _, f := range files {
+			if err := os.RemoveAll(f); err != nil {
+				log.Errorf("could not remove data-dir: %v", err)
+			}
+		}
+
+		if dataDir, err = ioutil.TempDir(torDir, "data-dir-"); err != nil {
+			eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
+			return &connectivity.ErrorACN{}
+		}
+	}
+
+	// Persist Current Data Dir as Tor Cache...
+	settings.TorCacheDir = dataDir
+	utils.WriteGlobalSettings(settings)
+
+	acn, err := tor.NewTorACNWithAuth(appDir, torPath, dataDir, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
 	if err != nil {
 		log.Errorf("Error connecting to Tor replacing with ErrorACN: %v\n", err)
 		eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
@@ -300,7 +328,7 @@ func ReconnectCwtchForeground() {
 		profile := application.GetPeer(profileOnion)
 		conversations, _ := profile.FetchConversations()
 		for _, conversation := range conversations {
-			if (conversation.IsGroup() && groupHandler != nil) || conversation.IsServer() == false {
+			if (conversation.IsGroup() && groupHandler != nil) || !conversation.IsServer() {
 				totalMessages, _ := profile.GetChannelMessageCount(conversation.ID, 0)
 				eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
 					event.Identity:       profileOnion,
@@ -548,6 +576,8 @@ func c_GetMessage(profile_ptr *C.char, profile_len C.int, conversation_id C.int,
 type EnhancedMessage struct {
 	model.Message
 	ID           int // the actual ID of the message in the database (not the row number)
+	LocalIndex   int // local index in the DB (row #). Can be empty (most calls supply it) but lookup by hash will fill it
+	ContentHash  string
 	ContactImage string
 	Attributes   map[string]string
 }
@@ -574,6 +604,7 @@ func GetMessage(profileOnion string, conversationID int, messageIndex int) strin
 			message.ID = messages[0].ID
 			message.Attributes = messages[0].Attr
 			message.ContactImage = utils.RandomProfileImage(message.PeerID)
+			message.ContentHash = model.CalculateContentHash(messages[0].Attr[constants2.AttrAuthor], messages[0].Body)
 		}
 	}
 	bytes, _ := json.Marshal(message)
@@ -587,7 +618,7 @@ func c_GetMessageByID(profile_ptr *C.char, profile_len C.int, conversation_id C.
 	return C.CString(GetMessageByID(profile, int(conversation_id), int(message_index)))
 }
 
-func GetMessageByID(profileOnion string, conversationID int, messageIndex int) string {
+func GetMessageByID(profileOnion string, conversationID int, messageID int) string {
 	var message EnhancedMessage
 	// There is an edge case that can happen on Android when the app is shutdown while fetching messages...
 	// The worker threads that are spawned can become activated again when the app is opened attempt to finish their job...
@@ -596,7 +627,7 @@ func GetMessageByID(profileOnion string, conversationID int, messageIndex int) s
 	// these requests complete almost immediately v.s. being stalled for seconds to minutes on large groups.
 	if application != nil {
 		profile := application.GetPeer(profileOnion)
-		dbmessage, attr, err := profile.GetChannelMessage(conversationID, 0, messageIndex)
+		dbmessage, attr, err := profile.GetChannelMessage(conversationID, 0, messageID)
 		if err == nil {
 			time, _ := time.Parse(time.RFC3339Nano, attr[constants2.AttrSentTimestamp])
 			message.Message = model.Message{
@@ -606,9 +637,10 @@ func GetMessageByID(profileOnion string, conversationID int, messageIndex int) s
 				PeerID:       attr[constants2.AttrAuthor],
 				Timestamp:    time,
 			}
-			message.ID = messageIndex
+			message.ID = messageID
 			message.Attributes = attr
 			message.ContactImage = utils.RandomProfileImage(message.PeerID)
+			message.ContentHash = model.CalculateContentHash(attr[constants2.AttrAuthor], dbmessage)
 		}
 	}
 	bytes, _ := json.Marshal(message)
@@ -624,7 +656,7 @@ func c_GetMessagesByContentHash(profile_ptr *C.char, profile_len C.int, conversa
 }
 
 func GetMessagesByContentHash(profileOnion string, handle int, contentHash string) string {
-	var indexedMessages []model.LocallyIndexedMessage
+	var message EnhancedMessage
 	if application != nil {
 		profile := application.GetPeer(profileOnion)
 		offset, err := profile.GetChannelMessageByContentHash(handle, 0, contentHash)
@@ -632,21 +664,24 @@ func GetMessagesByContentHash(profileOnion string, handle int, contentHash strin
 			messages, err := profile.GetMostRecentMessages(handle, 0, offset, 1)
 			if err == nil {
 				time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
-				msg := model.Message{
+				message.Message = model.Message{
 					Message:      messages[0].Body,
 					Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
 					Error:        messages[0].Attr[constants2.AttrErr],
 					PeerID:       messages[0].Attr[constants2.AttrAuthor],
 					Timestamp:    time,
 				}
-				// TODO this is mostly unused at this point, consider cleaning is up in 1.6
-				indexedMessages = append(indexedMessages, model.LocallyIndexedMessage{LocalIndex: offset, Message: msg})
+				message.ID = messages[0].ID
+				message.Attributes = messages[0].Attr
+				message.ContactImage = utils.RandomProfileImage(message.PeerID)
+				message.LocalIndex = offset
+				message.ContentHash = contentHash
 			} else {
 				log.Errorf("error fetching local index {} ", err)
 			}
 		}
 	}
-	bytes, _ := json.Marshal(indexedMessages)
+	bytes, _ := json.Marshal(message)
 	return string(bytes)
 }
 
@@ -776,7 +811,15 @@ func c_ResetTor() {
 
 func ResetTor() {
 	log.Infof("Replacing ACN with new Tor...")
-	globalACN.ReplaceACN(buildACN(*utils.ReadGlobalSettings(), globalTorPath, globalAppDir))
+	settings := utils.ReadGlobalSettings()
+
+	globalACN.Close() // we need to close first if dateDir is the same, otherwise buildACN can't launch tor.
+	globalACN.ReplaceACN(buildACN(*settings, globalTorPath, globalAppDir))
+
+	// We need to update settings on reset as buildACN can alter settings, otherwise the next reset will be broken...
+	settings = utils.ReadGlobalSettings()
+	settingsJson, _ := json.Marshal(settings)
+	application.GetPrimaryBus().Publish(event.NewEvent(utils.UpdateGlobalSettings, map[event.Field]string{event.Data: string(settingsJson)}))
 	log.Infof("Restarted")
 }
 
