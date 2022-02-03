@@ -730,9 +730,23 @@ func ShareFile(profileOnion string, conversationID int, sharefilepath string) {
 	if err != nil {
 		log.Errorf("file sharing error: %v", err)
 	} else {
-		err = fh.ShareFile(sharefilepath, profile, conversationID)
+		fileKey, err := fh.ShareFile(sharefilepath, profile, conversationID)
 		if err != nil {
 			log.Errorf("error sharing file: %v", err)
+		} else if conversationID == -1 {
+			// FIXME: At some point we might want to allow arbitrary public files, but for now this API will assume
+			// there is only one, and it is the custom profile image...
+			profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.CustomProfileImageKey, fileKey)
+			path, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey))
+			// tell the UI the the file has been "downloaded"
+			if exists {
+				eventHandler.Push(event.NewEvent(event.FileDownloaded, map[event.Field]string{
+					ProfileOnion:   profileOnion,
+					event.FileKey:  fileKey,
+					event.FilePath: path,
+					event.TempFile: "",
+				}))
+			}
 		}
 	}
 }
