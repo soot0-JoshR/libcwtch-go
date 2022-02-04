@@ -139,7 +139,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				e.Data[constants2.Picture], _ = profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", key))
 				serializedManifest, _ := profile.GetScopedZonedAttribute(attr.ConversationScope, attr.FilesharingZone, fmt.Sprintf("%s.manifest", key))
 				profile.ShareFile(key, serializedManifest)
-				log.Infof("Custom Profile Image: %v %s", e.Data[constants2.Picture], serializedManifest)
+				log.Debugf("Custom Profile Image: %v %s", e.Data[constants2.Picture], serializedManifest)
 			}
 
 			// Resolve the profile image of the profile.
@@ -443,7 +443,6 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 
 					// auto download profile images from contacts...
 					settings := ReadGlobalSettings()
-
 					if settings.ExperimentsEnabled && zone == attr.ProfileZone && path == constants.CustomProfileImageKey {
 						fileKey := val
 						fsf, err := filesharing.FunctionalityGate(settings.Experiments)
