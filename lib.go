@@ -209,11 +209,14 @@ func _startCwtch(appDir string, torPath string) {
 	publishLoadedServers()
 	LaunchServers()
 
-	// Send global settings to the UI...
+	// FIXME: This code exists to allow the Splash Screen test in the new UI integration tests to pass
+	// it doesn't actually fix the problem in theory, and we should get around to ensuring that application
+	// is safe to access even if shutdown is called concurrently...
 	if application == nil {
 		log.Errorf("startCwtch: primary application object has gone away. assuming application is closing.")
 		return
 	}
+	// Send global settings to the UI...
 	application.GetPrimaryBus().Publish(event.NewEvent(utils.UpdateGlobalSettings, map[event.Field]string{event.Data: string(settingsJson)}))
 	log.Infof("libcwtch-go application launched")
 	application.GetPrimaryBus().Publish(event.NewEvent(utils.CwtchStarted, map[event.Field]string{}))
@@ -730,7 +733,7 @@ func ShareFile(profileOnion string, conversationID int, sharefilepath string) {
 	if err != nil {
 		log.Errorf("file sharing error: %v", err)
 	} else {
-		fileKey, err := fh.ShareFile(sharefilepath, profile, conversationID)
+		fileKey, overlay, err := fh.ShareFile(sharefilepath, profile)
 		if err != nil {
 			log.Errorf("error sharing file: %v", err)
 		} else if conversationID == -1 {
@@ -747,6 +750,8 @@ func ShareFile(profileOnion string, conversationID int, sharefilepath string) {
 					event.TempFile: "",
 				}))
 			}
+		} else {
+			profile.SendMessage(conversationID, overlay)
 		}
 	}
 }
