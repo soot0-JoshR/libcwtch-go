@@ -8,6 +8,7 @@ import "C"
 
 import (
 	"crypto/rand"
+	"cwtch.im/cwtch/protocol/files"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -771,7 +772,8 @@ func DownloadFile(profileOnion string, conversationID int, filepath, manifestpat
 	if err != nil {
 		log.Errorf("file sharing error: %v", err)
 	} else {
-		fh.DownloadFile(profile, conversationID, filepath, manifestpath, filekey)
+		// default to max 10 GB limit...
+		fh.DownloadFile(profile, conversationID, filepath, manifestpath, filekey, files.MaxManifestSize*files.DefaultChunkSize)
 	}
 }
 

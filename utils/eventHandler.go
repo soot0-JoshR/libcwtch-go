@@ -457,7 +457,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 								ev.Event.Data[event.FileDownloadFinished] = constants.True
 							} else {
 								ev.Event.Data[event.FileDownloadFinished] = constants.False
-								fsf.DownloadFile(profile, conversation.ID, fp, mp, val)
+								fsf.DownloadFile(profile, conversation.ID, fp, mp, val, constants.ImagePreviewMaxSizeInBytes)
 							}
 						} else {
 							return ""
@@ -569,7 +569,7 @@ func handleImagePreviews(profile peer.CwtchPeer, ev *event.Event, conversationID
 					ev.Data["Auto"] = constants.True
 					mID, _ := strconv.Atoi(ev.Data["Index"])
 					profile.UpdateMessageAttribute(conversationID, 0, mID, constants.AttrDownloaded, constants.True)
-					fh.DownloadFile(profile, senderID, fp, mp, fm.FileKey())
+					fh.DownloadFile(profile, senderID, fp, mp, fm.FileKey(), constants.ImagePreviewMaxSizeInBytes)
 				}
 			}
 		}

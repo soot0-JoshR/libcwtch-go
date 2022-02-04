@@ -11,8 +11,8 @@ cloud.google.com/go/firestore v1.1.0/go.mod h1:ulACoGHTpvq5r8rxGJ4ddJZBZqakUQqCl
 cloud.google.com/go/pubsub v1.0.1/go.mod h1:R0Gpsv3s54REJCy4fxDixWD93lHJMoZTyQ2kNxGRt3I=
 cloud.google.com/go/storage v1.0.0/go.mod h1:IhtSnM/ZTZV8YYJWCY8RULGVqBDmpoyjwiyrjsg+URw=
 cwtch.im/cwtch v0.14.9/go.mod h1:/fLuoYLY/7JHw6RojFojpd245CiOcU24QpWqzh9FRDI=
-cwtch.im/cwtch v0.14.19 h1:Vg2OyUkSpYecrOU2M3mLF/PDyUZZSxk8HG55uimja58=
-cwtch.im/cwtch v0.14.19/go.mod h1:lG9e5RUib+SbX2XsjWtHKJWz9geoIglSAq55LrCm8Io=
+cwtch.im/cwtch v0.15.0 h1:pKuuOqqynblr9ska+c37Kblat9l/0jhCDZN4YBr2Cj0=
+cwtch.im/cwtch v0.15.0/go.mod h1:lG9e5RUib+SbX2XsjWtHKJWz9geoIglSAq55LrCm8Io=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
 filippo.io/edwards25519 v1.0.0-rc.1 h1:m0VOOB23frXZvAOK44usCgLWvtsxIoMCTBGJZlpmGfU=
 filippo.io/edwards25519 v1.0.0-rc.1/go.mod h1:N1IkdkCkiLB6tki+MYJoSx2JTY9NUlxZE7eHn5EwJns=
