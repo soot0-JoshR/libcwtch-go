@@ -11,3 +11,12 @@ const (
 	// StatusError is an event response for event.Status signifying a call failed in error, ideally accompanied by a event.Error
 	StatusError = "error"
 )
+
+const (
+	// NotificationNone enum for message["notification"] that means no notification
+	NotificationNone = "None"
+	// NotificationEvent enum for message["notification"] that means emit a notification that a message event happened only
+	NotificationEvent = "SimpleEvent"
+	// NotificationConversation enum for message["notification"] that means emit a notification event with Conversation handle included
+	NotificationConversation = "ContactInfo"
+)

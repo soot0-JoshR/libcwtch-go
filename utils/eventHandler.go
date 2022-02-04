@@ -220,6 +220,14 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 
 					lastMessage, _ := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0, 1)
 
+					options := make(map[string]string)
+					if notificationOptIn, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.NotificationOptIn); exists {
+						options[constants2.NotificationOptIn] = notificationOptIn
+					}
+					if notificationOptOut, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.NotificationOptOut); exists {
+						options[constants2.NotificationOptOut] = notificationOptOut
+					}
+
 					contacts = append(contacts, Contact{
 						Name:           name,
 						Identifier:     conversationInfo.ID,
@@ -236,6 +244,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						IsGroup:        conversationInfo.IsGroup(),
 						GroupServer:    groupServer,
 						IsArchived:     isArchived == event.True,
+						Options:        options,
 					})
 				}
 			}
@@ -305,6 +314,8 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			if ci.Accepted {
 				handleImagePreviews(profile, &ev.Event, ci.ID, ci.ID)
 			}
+
+			ev.Event.Data["notification"] = determineNotification(ci)
 		case event.NewMessageFromGroup:
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
@@ -327,6 +338,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			if ci != nil && ci.Accepted {
 				handleImagePreviews(profile, &ev.Event, conversationID, ci.ID)
 			}
+			ev.Event.Data["notification"] = determineNotification(ci)
 		case event.PeerAcknowledgement:
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
 			if ci != nil && err == nil {

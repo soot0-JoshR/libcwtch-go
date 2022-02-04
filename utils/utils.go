@@ -1,8 +1,11 @@
 package utils
 
 import (
+	"cwtch.im/cwtch/model"
+	"cwtch.im/cwtch/model/attr"
 	"encoding/base32"
 	"encoding/hex"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/openprivacy/log"
 	"strings"
 )
@@ -26,4 +29,30 @@ func RandomGroupImage(handle string) string {
 		return "assets/extra/openprivacy.png"
 	}
 	return "assets/servers/" + choices[int(barr[0])%len(choices)] + ".png"
+}
+
+func determineNotification(ci *model.Conversation) string {
+	settings := ReadGlobalSettings()
+
+	switch settings.NotificationPolicy {
+	case "NotificationPolicy.None":
+		return constants.NotificationNone
+	case "NotificationPolicy.OptOut":
+		if optOut, exists := ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.NotificationOptOut); exists && optOut == "true" {
+			return constants.NotificationNone
+		}
+		if settings.NotificationContent == "NotificationContent.ContactInfo" {
+			return constants.NotificationConversation
+		}
+		return constants.NotificationEvent
+	case "NotificationPolicy.OptIn":
+		if optIn, exists := ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.NotificationOptIn); exists && optIn == "true" {
+			if settings.NotificationContent == "NotificationContent.ContactInfo" {
+				return constants.NotificationConversation
+			}
+			return constants.NotificationEvent
+		}
+		return constants.NotificationNone
+	}
+	return constants.NotificationNone
 }

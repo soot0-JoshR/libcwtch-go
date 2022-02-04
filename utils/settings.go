@@ -34,6 +34,8 @@ type GlobalSettings struct {
 	ExperimentsEnabled      bool
 	Experiments             map[string]bool
 	BlockUnknownConnections bool
+	NotificationPolicy      string
+	NotificationContent     string
 	StreamerMode            bool
 	StateRootPane           int
 	FirstTime               bool
@@ -62,6 +64,8 @@ var DefaultGlobalSettings = GlobalSettings{
 	StreamerMode:            false,
 	UIColumnModePortrait:    "DualpaneMode.Single",
 	UIColumnModeLandscape:   "DualpaneMode.CopyPortrait",
+	NotificationPolicy:      "NotificationPolicy.OptOut",
+	NotificationContent:     "NotificationContent.SimpleEvent",
 	DownloadPath:            "",
 	AllowAdvancedTorConfig:  false,
 	CustomTorrc:             "",

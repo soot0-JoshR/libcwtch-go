@@ -18,6 +18,9 @@ const PeerOnline = "peer-online"
 // Description is used on server contacts,
 const Description = "description"
 
+const NotificationOptIn = "notification-opt-in"
+const NotificationOptOut = "notification-opt-out"
+
 const StateProfilePane = "state-profile-pane"
 const StateSelectedConversation = "state-selected-conversation"
 const StateSelectedProfileTime = "state-selected-profile-time"
