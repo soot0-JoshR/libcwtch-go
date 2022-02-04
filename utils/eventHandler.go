@@ -2,6 +2,7 @@ package utils
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"cwtch.im/cwtch/app"
@@ -88,6 +89,10 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 		case event.NewPeer:
 			onion := e.Data[event.Identity]
 			profile := eh.app.GetPeer(e.Data[event.Identity])
+			if profile == nil {
+				log.Errorf("NewPeer: skipping profile initialization. this should only happen when the app is rapidly opened+closed (eg during testing)")
+				break
+			}
 			log.Debug("New Peer Event: %v", e)
 
 			if e.Data["Reload"] != event.True {
@@ -126,8 +131,19 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			// Name always exists
 			e.Data[constants.Name], _ = profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
 
+			// if a custom profile image exists then default to it.
+			key, exists := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.CustomProfileImageKey)
+			if !exists {
+				e.Data[constants2.Picture] = RandomProfileImage(onion)
+			} else {
+				e.Data[constants2.Picture], _ = profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", key))
+				serializedManifest, _ := profile.GetScopedZonedAttribute(attr.ConversationScope, attr.FilesharingZone, fmt.Sprintf("%s.manifest", key))
+				profile.ShareFile(key, serializedManifest)
+				log.Debugf("Custom Profile Image: %v %s", e.Data[constants2.Picture], serializedManifest)
+			}
+
 			// Resolve the profile image of the profile.
-			e.Data[constants2.Picture] = RandomProfileImage(onion)
+
 			e.Data["Online"] = online
 
 			// Construct our conversations and our srever lists
@@ -165,7 +181,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					if conversationInfo.IsGroup() {
 						cpicPath = RandomGroupImage(conversationInfo.Handle)
 					} else {
-						cpicPath = RandomProfileImage(conversationInfo.Handle)
+						cpicPath = GetProfileImage(profile, conversationInfo)
 					}
 
 					// Resolve Save History Setting
@@ -238,6 +254,17 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 	return string(json)
 }
 
+func GetProfileImage(profile peer.CwtchPeer, conversationInfo *model.Conversation) string {
+	fileKey, err := profile.GetConversationAttribute(conversationInfo.ID, attr.PublicScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants.CustomProfileImageKey)))
+	if err == nil {
+		if _, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists {
+			image, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey))
+			return image
+		}
+	}
+	return RandomProfileImage(conversationInfo.Handle)
+}
+
 // handleProfileEvent enriches Profile events so they are usable with out further data fetches
 func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 	// cache of contact states to use to filter out events repeating known states
@@ -252,9 +279,11 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 		case event.NewMessageFromPeer: //event.TimestampReceived, event.RemotePeer, event.Data
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
+			ev.Event.Data[constants2.Picture] = RandomProfileImage(ev.Event.Data["RemotePeer"])
 			if ci != nil && err == nil {
 				ev.Event.Data[event.ConversationID] = strconv.Itoa(ci.ID)
 				profile.SetConversationAttribute(ci.ID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants2.Archived)), event.False)
+				ev.Event.Data[constants2.Picture] = GetProfileImage(profile, ci)
 			} else {
 				// TODO This Conversation May Not Exist Yet...But we are not in charge of creating it...
 				log.Errorf("todo wait for contact to be added before processing this event...")
@@ -268,10 +297,9 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 					ev.Event.Data["Nick"] = ev.Event.Data["RemotePeer"]
 					// If we dont have a name val for a peer, but they have sent us a message, we might be approved now, re-ask
 					profile.SendScopedZonedGetValToContact(ci.ID, attr.PublicScope, attr.ProfileZone, constants.Name)
-					profile.SendScopedZonedGetValToContact(ci.ID, attr.PublicScope, attr.ProfileZone, constants2.Picture)
+					profile.SendScopedZonedGetValToContact(ci.ID, attr.PublicScope, attr.ProfileZone, constants.CustomProfileImageKey)
 				}
 			}
-			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data["RemotePeer"])
 
 			if ci.Accepted {
 				handleImagePreviews(profile, &ev.Event, ci.ID, ci.ID)
@@ -279,6 +307,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 		case event.NewMessageFromGroup:
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
+			ev.Event.Data[constants2.Picture] = RandomProfileImage(ev.Event.Data["RemotePeer"])
 			if ci != nil && err == nil {
 				var exists bool
 				ev.Event.Data["Nick"], exists = ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.Name)
@@ -288,8 +317,9 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 						ev.Event.Data["Nick"] = ev.Event.Data["RemotePeer"]
 					}
 				}
+				ev.Event.Data[constants2.Picture] = GetProfileImage(profile, ci)
 			}
-			ev.Event.Data["Picture"] = RandomProfileImage(ev.Event.Data[event.RemotePeer])
+
 			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
 			profile.SetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants2.Archived)), event.False)
 
@@ -325,7 +355,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 
 			lastMessage, _ := profile.GetMostRecentMessages(conversationID, 0, 0, 1)
 			ev.Event.Data["unread"] = strconv.Itoa(count) // if this is a new contact with messages attached then by-definition these are unread...
-			ev.Event.Data["picture"] = RandomProfileImage(conversationInfo.Handle)
+			ev.Event.Data[constants2.Picture] = RandomProfileImage(conversationInfo.Handle)
 			ev.Event.Data["numMessages"] = strconv.Itoa(count)
 			ev.Event.Data["nick"] = conversationInfo.Handle
 			ev.Event.Data["status"] = connections.ConnectionStateName[profile.GetPeerState(conversationInfo.Handle)]
@@ -337,14 +367,14 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			// This event should only happen after we have validated the invite, as such the error
 			// condition *should* never happen.
 			groupPic := RandomGroupImage(ev.Event.Data[event.GroupID])
-			ev.Event.Data["PicturePath"] = groupPic
+			ev.Event.Data[constants2.Picture] = groupPic
 		case event.NewGroup:
 			// This event should only happen after we have validated the invite, as such the error
 			// condition *should* never happen.
 			serializedInvite := ev.Event.Data[event.GroupInvite]
 			if invite, err := model.ValidateInvite(serializedInvite); err == nil {
 				groupPic := RandomGroupImage(invite.GroupID)
-				ev.Event.Data["PicturePath"] = groupPic
+				ev.Event.Data[constants2.Picture] = groupPic
 			} else {
 				log.Errorf("received a new group event which contained an invalid invite %v. this should never happen and likely means there is a bug in cwtch. Please file a ticket @ https://git.openprivcy.ca/cwtch.im/cwtch", err)
 				return ""
@@ -357,7 +387,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				return ""
 			}
 
-			contact, _ := profile.FetchConversationInfo(ev.Event.Data[event.RemotePeer])
+			contact, err := profile.FetchConversationInfo(ev.Event.Data[event.RemotePeer])
 
 			if ev.Event.Data[event.RemotePeer] == profile.GetOnion() {
 				return "" // suppress events from our own profile...
@@ -365,7 +395,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 
 			// We do not know who this is...don't send any event until we see a message from them
 			// (at that point the conversation will have been created...)
-			if cxnState == connections.AUTHENTICATED && contact == nil {
+			if contact == nil || err != nil || contact.ID == 0 {
 				return ""
 			}
 
@@ -380,7 +410,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				if cxnState == connections.AUTHENTICATED {
 					// if known and authed, get vars
 					profile.SendScopedZonedGetValToContact(contact.ID, attr.PublicScope, attr.ProfileZone, constants.Name)
-					profile.SendScopedZonedGetValToContact(contact.ID, attr.PublicScope, attr.ProfileZone, constants2.Picture)
+					profile.SendScopedZonedGetValToContact(contact.ID, attr.PublicScope, attr.ProfileZone, constants.CustomProfileImageKey)
 				}
 			}
 		case event.ServerStateChange:
@@ -399,16 +429,44 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 
 		case event.NewRetValMessageFromPeer:
 			// auto handled event means the setting is already done, we're just deciding if we need to tell the UI
-			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
+			onion := ev.Event.Data[event.RemotePeer]
 			scope := ev.Event.Data[event.Scope]
 			path := ev.Event.Data[event.Path]
+			val := ev.Event.Data[event.Data]
 			exists, _ := strconv.ParseBool(ev.Event.Data[event.Exists])
 
-			if exists && attr.IntoScope(scope) == attr.PublicScope {
-				zone, path := attr.ParseZone(path)
-				if val, err := profile.GetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(path))); err != nil && val != "" {
-					// we have a locally set override, don't pass this remote set public scope update to UI
-					return ""
+			conversation, err := profile.FetchConversationInfo(onion)
+			if err == nil {
+
+				if exists && attr.IntoScope(scope) == attr.PublicScope {
+					zone, path := attr.ParseZone(path)
+
+					// auto download profile images from contacts...
+					settings := ReadGlobalSettings()
+					if settings.ExperimentsEnabled && zone == attr.ProfileZone && path == constants.CustomProfileImageKey {
+						fileKey := val
+						fsf, err := filesharing.FunctionalityGate(settings.Experiments)
+						imagePreviewsEnabled := settings.Experiments["filesharing-images"]
+						if err == nil && imagePreviewsEnabled {
+							basepath := settings.DownloadPath
+							fp, mp := filesharing.GenerateDownloadPath(basepath, fileKey, true)
+							log.Debugf("Downloading Profile Image %v %v %v", fp, mp, fileKey)
+							ev.Event.Data[event.FilePath] = fp
+							if _, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists {
+								ev.Event.Data[event.FileDownloadFinished] = constants.True
+							} else {
+								ev.Event.Data[event.FileDownloadFinished] = constants.False
+								fsf.DownloadFile(profile, conversation.ID, fp, mp, val, constants.ImagePreviewMaxSizeInBytes)
+							}
+						} else {
+							return ""
+						}
+					}
+
+					if val, err := profile.GetConversationAttribute(conversation.ID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(path))); err != nil && val != "" {
+						// we have a locally set override, don't pass this remote set public scope update to UI
+						return ""
+					}
 				}
 			}
 		}
@@ -495,7 +553,8 @@ func getLastMessageTime(conversationMessages []model.ConversationMessage) int {
 func handleImagePreviews(profile peer.CwtchPeer, ev *event.Event, conversationID, senderID int) {
 	settings := ReadGlobalSettings()
 	fh, err := filesharing.PreviewFunctionalityGate(settings.Experiments)
-	if err == nil {
+	imagePreviewsEnabled := settings.Experiments["filesharing-images"]
+	if err == nil && imagePreviewsEnabled {
 		var cm model.MessageWrapper
 		err := json.Unmarshal([]byte(ev.Data[event.Data]), &cm)
 		if err == nil && cm.Overlay == model.OverlayFileSharing {
@@ -504,12 +563,12 @@ func handleImagePreviews(profile peer.CwtchPeer, ev *event.Event, conversationID
 			if err == nil {
 				if fm.ShouldAutoDL() {
 					basepath := settings.DownloadPath
-					fp, mp := filesharing.GenerateDownloadPath(basepath, fm.Name)
+					fp, mp := filesharing.GenerateDownloadPath(basepath, fm.Name, false)
 					log.Debugf("autodownloading file!")
 					ev.Data["Auto"] = constants.True
 					mID, _ := strconv.Atoi(ev.Data["Index"])
 					profile.UpdateMessageAttribute(conversationID, 0, mID, constants.AttrDownloaded, constants.True)
-					fh.DownloadFile(profile, senderID, fp, mp, fm.FileKey())
+					fh.DownloadFile(profile, senderID, fp, mp, fm.FileKey(), constants.ImagePreviewMaxSizeInBytes)
 				}
 			}
 		}

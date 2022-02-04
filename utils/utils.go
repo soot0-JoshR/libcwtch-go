@@ -13,9 +13,9 @@ func RandomProfileImage(onion string) string {
 	barr, err := base32.StdEncoding.DecodeString(strings.ToUpper(onion))
 	if err != nil || len(barr) != 35 {
 		log.Errorf("error finding image for profile: %v %v %v\n", onion, err, barr)
-		return "extra/openprivacy.png"
+		return "assets/extra/openprivacy.png"
 	}
-	return "profiles/" + choices[int(barr[33])%len(choices)] + ".png"
+	return "assets/profiles/" + choices[int(barr[33])%len(choices)] + ".png"
 }
 
 func RandomGroupImage(handle string) string {
@@ -23,7 +23,7 @@ func RandomGroupImage(handle string) string {
 	barr, err := hex.DecodeString(handle)
 	if err != nil || len(barr) == 0 {
 		log.Errorf("error finding image for group: %v %v %v\n", handle, err, barr)
-		return "extra/openprivacy.png"
+		return "assets/extra/openprivacy.png"
 	}
-	return "servers/" + choices[int(barr[0])%len(choices)] + ".png"
+	return "assets/servers/" + choices[int(barr[0])%len(choices)] + ".png"
 }

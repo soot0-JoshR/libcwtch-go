@@ -8,6 +8,7 @@ import "C"
 
 import (
 	"crypto/rand"
+	"cwtch.im/cwtch/protocol/files"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -209,6 +210,13 @@ func _startCwtch(appDir string, torPath string) {
 	publishLoadedServers()
 	LaunchServers()
 
+	// FIXME: This code exists to allow the Splash Screen test in the new UI integration tests to pass
+	// it doesn't actually fix the problem in theory, and we should get around to ensuring that application
+	// is safe to access even if shutdown is called concurrently...
+	if application == nil {
+		log.Errorf("startCwtch: primary application object has gone away. assuming application is closing.")
+		return
+	}
 	// Send global settings to the UI...
 	application.GetPrimaryBus().Publish(event.NewEvent(utils.UpdateGlobalSettings, map[event.Field]string{event.Data: string(settingsJson)}))
 	log.Infof("libcwtch-go application launched")
@@ -726,9 +734,25 @@ func ShareFile(profileOnion string, conversationID int, sharefilepath string) {
 	if err != nil {
 		log.Errorf("file sharing error: %v", err)
 	} else {
-		err = fh.ShareFile(sharefilepath, profile, conversationID)
+		fileKey, overlay, err := fh.ShareFile(sharefilepath, profile)
 		if err != nil {
 			log.Errorf("error sharing file: %v", err)
+		} else if conversationID == -1 {
+			// FIXME: At some point we might want to allow arbitrary public files, but for now this API will assume
+			// there is only one, and it is the custom profile image...
+			profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.CustomProfileImageKey, fileKey)
+			path, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey))
+			// tell the UI the the file has been "downloaded"
+			if exists {
+				eventHandler.Push(event.NewEvent(event.FileDownloaded, map[event.Field]string{
+					ProfileOnion:   profileOnion,
+					event.FileKey:  fileKey,
+					event.FilePath: path,
+					event.TempFile: "",
+				}))
+			}
+		} else {
+			profile.SendMessage(conversationID, overlay)
 		}
 	}
 }
@@ -748,7 +772,8 @@ func DownloadFile(profileOnion string, conversationID int, filepath, manifestpat
 	if err != nil {
 		log.Errorf("file sharing error: %v", err)
 	} else {
-		fh.DownloadFile(profile, conversationID, filepath, manifestpath, filekey)
+		// default to max 10 GB limit...
+		fh.DownloadFile(profile, conversationID, filepath, manifestpath, filekey, files.MaxManifestSize*files.DefaultChunkSize)
 	}
 }
 
