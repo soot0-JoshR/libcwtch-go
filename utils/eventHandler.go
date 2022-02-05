@@ -220,31 +220,33 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 
 					lastMessage, _ := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0, 1)
 
-					options := make(map[string]string)
-					if notificationOptIn, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.NotificationOptIn); exists {
-						options[constants2.NotificationOptIn] = notificationOptIn
+					notificationOptIn := false
+					if notificationOptInAttr, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.NotificationOptIn); exists {
+						notificationOptIn = notificationOptInAttr == "true"
 					}
-					if notificationOptOut, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.NotificationOptOut); exists {
-						options[constants2.NotificationOptOut] = notificationOptOut
+					notificationOptOut := false
+					if notificationOptOutAttr, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.NotificationOptOut); exists {
+						notificationOptOut = notificationOptOutAttr == "true"
 					}
 
 					contacts = append(contacts, Contact{
-						Name:           name,
-						Identifier:     conversationInfo.ID,
-						Onion:          conversationInfo.Handle,
-						Status:         connections.ConnectionStateName[state],
-						Picture:        cpicPath,
-						DefaultPicture: RandomProfileImage(conversationInfo.Handle),
-						Accepted:       conversationInfo.Accepted,
-						Blocked:        blocked,
-						SaveHistory:    saveHistory,
-						Messages:       count,
-						Unread:         0,
-						LastMessage:    strconv.Itoa(getLastMessageTime(lastMessage)),
-						IsGroup:        conversationInfo.IsGroup(),
-						GroupServer:    groupServer,
-						IsArchived:     isArchived == event.True,
-						Options:        options,
+						Name:               name,
+						Identifier:         conversationInfo.ID,
+						Onion:              conversationInfo.Handle,
+						Status:             connections.ConnectionStateName[state],
+						Picture:            cpicPath,
+						DefaultPicture:     RandomProfileImage(conversationInfo.Handle),
+						Accepted:           conversationInfo.Accepted,
+						Blocked:            blocked,
+						SaveHistory:        saveHistory,
+						Messages:           count,
+						Unread:             0,
+						LastMessage:        strconv.Itoa(getLastMessageTime(lastMessage)),
+						IsGroup:            conversationInfo.IsGroup(),
+						GroupServer:        groupServer,
+						IsArchived:         isArchived == event.True,
+						NotificationOptIn:  notificationOptIn,
+						NotificationOptOut: notificationOptOut,
 					})
 				}
 			}
@@ -315,7 +317,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				handleImagePreviews(profile, &ev.Event, ci.ID, ci.ID)
 			}
 
-			ev.Event.Data["notification"] = determineNotification(ci)
+			ev.Event.Data["notification"] = string(determineNotification(ci))
 		case event.NewMessageFromGroup:
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
@@ -338,7 +340,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			if ci != nil && ci.Accepted {
 				handleImagePreviews(profile, &ev.Event, conversationID, ci.ID)
 			}
-			ev.Event.Data["notification"] = determineNotification(ci)
+			ev.Event.Data["notification"] = string(determineNotification(ci))
 		case event.PeerAcknowledgement:
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
 			if ci != nil && err == nil {

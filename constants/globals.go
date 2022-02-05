@@ -12,11 +12,13 @@ const (
 	StatusError = "error"
 )
 
+type NotificationType string
+
 const (
 	// NotificationNone enum for message["notification"] that means no notification
-	NotificationNone = "None"
+	NotificationNone = NotificationType("None")
 	// NotificationEvent enum for message["notification"] that means emit a notification that a message event happened only
-	NotificationEvent = "SimpleEvent"
+	NotificationEvent = NotificationType("SimpleEvent")
 	// NotificationConversation enum for message["notification"] that means emit a notification event with Conversation handle included
-	NotificationConversation = "ContactInfo"
+	NotificationConversation = NotificationType("ContactInfo")
 )

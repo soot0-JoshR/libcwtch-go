@@ -26,6 +26,14 @@ var lock sync.Mutex
 const GlobalSettingsFilename = "ui.globals"
 const saltFile = "SALT"
 
+type NotificationPolicy string
+
+const (
+	NotificationPolicyNone   = NotificationPolicy("NotificationPolicy.None")
+	NotificationPolicyOptOut = NotificationPolicy("NotificationPolicy.OptOut")
+	NotificationPolicyOptIn  = NotificationPolicy("NotificationPolicy.OptIn")
+)
+
 type GlobalSettings struct {
 	Locale                  string
 	Theme                   string
@@ -34,7 +42,7 @@ type GlobalSettings struct {
 	ExperimentsEnabled      bool
 	Experiments             map[string]bool
 	BlockUnknownConnections bool
-	NotificationPolicy      string
+	NotificationPolicy      NotificationPolicy
 	NotificationContent     string
 	StreamerMode            bool
 	StateRootPane           int
