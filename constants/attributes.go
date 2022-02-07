@@ -5,6 +5,7 @@ const SchemaVersion = "schemaVersion"
 const Name = "name"
 const LastRead = "last-read"
 const Picture = "picture"
+const DefaultProfilePicture = "defaultPicture"
 const ShowBlocked = "show-blocked"
 const Archived = "archived"
 
