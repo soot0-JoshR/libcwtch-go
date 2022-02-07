@@ -130,7 +130,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
 			// Name always exists
 			e.Data[constants.Name], _ = profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
-
+			e.Data[constants2.DefaultProfilePicture] = RandomProfileImage(onion)
 			// if a custom profile image exists then default to it.
 			key, exists := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.CustomProfileImageKey)
 			if !exists {
@@ -221,20 +221,21 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					lastMessage, _ := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0, 1)
 
 					contacts = append(contacts, Contact{
-						Name:        name,
-						Identifier:  conversationInfo.ID,
-						Onion:       conversationInfo.Handle,
-						Status:      connections.ConnectionStateName[state],
-						Picture:     cpicPath,
-						Accepted:    conversationInfo.Accepted,
-						Blocked:     blocked,
-						SaveHistory: saveHistory,
-						Messages:    count,
-						Unread:      0,
-						LastMessage: strconv.Itoa(getLastMessageTime(lastMessage)),
-						IsGroup:     conversationInfo.IsGroup(),
-						GroupServer: groupServer,
-						IsArchived:  isArchived == event.True,
+						Name:           name,
+						Identifier:     conversationInfo.ID,
+						Onion:          conversationInfo.Handle,
+						Status:         connections.ConnectionStateName[state],
+						Picture:        cpicPath,
+						DefaultPicture: RandomProfileImage(conversationInfo.Handle),
+						Accepted:       conversationInfo.Accepted,
+						Blocked:        blocked,
+						SaveHistory:    saveHistory,
+						Messages:       count,
+						Unread:         0,
+						LastMessage:    strconv.Itoa(getLastMessageTime(lastMessage)),
+						IsGroup:        conversationInfo.IsGroup(),
+						GroupServer:    groupServer,
+						IsArchived:     isArchived == event.True,
 					})
 				}
 			}
@@ -356,6 +357,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			lastMessage, _ := profile.GetMostRecentMessages(conversationID, 0, 0, 1)
 			ev.Event.Data["unread"] = strconv.Itoa(count) // if this is a new contact with messages attached then by-definition these are unread...
 			ev.Event.Data[constants2.Picture] = RandomProfileImage(conversationInfo.Handle)
+			ev.Event.Data[constants2.DefaultProfilePicture] = RandomProfileImage(conversationInfo.Handle)
 			ev.Event.Data["numMessages"] = strconv.Itoa(count)
 			ev.Event.Data["nick"] = conversationInfo.Handle
 			ev.Event.Data["status"] = connections.ConnectionStateName[profile.GetPeerState(conversationInfo.Handle)]
