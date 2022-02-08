@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 
 	"cwtch.im/cwtch/app"
@@ -113,7 +114,8 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 
 			// If the user has chosen to block unknown profiles
 			// then explicitly configure the protocol engine to do so..
-			if ReadGlobalSettings().BlockUnknownConnections {
+			settings := ReadGlobalSettings()
+			if settings.BlockUnknownConnections {
 				profile.BlockUnknownConnections()
 			} else {
 				// For completeness
@@ -181,7 +183,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					if conversationInfo.IsGroup() {
 						cpicPath = RandomGroupImage(conversationInfo.Handle)
 					} else {
-						cpicPath = GetProfileImage(profile, conversationInfo)
+						cpicPath = GetProfileImage(profile, conversationInfo, settings.DownloadPath)
 					}
 
 					// Resolve Save History Setting
@@ -255,12 +257,16 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 	return string(json)
 }
 
-func GetProfileImage(profile peer.CwtchPeer, conversationInfo *model.Conversation) string {
+func GetProfileImage(profile peer.CwtchPeer, conversationInfo *model.Conversation, basepath string) string {
 	fileKey, err := profile.GetConversationAttribute(conversationInfo.ID, attr.PublicScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants.CustomProfileImageKey)))
 	if err == nil {
-		if _, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists {
-			image, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey))
-			return image
+		if value, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists && value == event.True {
+			fp, _ := filesharing.GenerateDownloadPath(basepath, fileKey, true)
+			// check if the file exists...if it does then set the path...
+			if _, err := os.Stat(fp); err == nil {
+				image, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey))
+				return image
+			}
 		}
 	}
 	return RandomProfileImage(conversationInfo.Handle)
@@ -284,7 +290,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			if ci != nil && err == nil {
 				ev.Event.Data[event.ConversationID] = strconv.Itoa(ci.ID)
 				profile.SetConversationAttribute(ci.ID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants2.Archived)), event.False)
-				ev.Event.Data[constants2.Picture] = GetProfileImage(profile, ci)
+				ev.Event.Data[constants2.Picture] = GetProfileImage(profile, ci, ReadGlobalSettings().DownloadPath)
 			} else {
 				// TODO This Conversation May Not Exist Yet...But we are not in charge of creating it...
 				log.Errorf("todo wait for contact to be added before processing this event...")
@@ -318,7 +324,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 						ev.Event.Data["Nick"] = ev.Event.Data["RemotePeer"]
 					}
 				}
-				ev.Event.Data[constants2.Picture] = GetProfileImage(profile, ci)
+				ev.Event.Data[constants2.Picture] = GetProfileImage(profile, ci, ReadGlobalSettings().DownloadPath)
 			}
 
 			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
@@ -449,18 +455,26 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 						fileKey := val
 						fsf, err := filesharing.FunctionalityGate(settings.Experiments)
 						imagePreviewsEnabled := settings.Experiments["filesharing-images"]
-						if err == nil && imagePreviewsEnabled {
+						if err == nil && imagePreviewsEnabled && conversation.Accepted {
+
 							basepath := settings.DownloadPath
 							fp, mp := filesharing.GenerateDownloadPath(basepath, fileKey, true)
+
+							if value, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists && value == event.True {
+								if _, err := os.Stat(fp); err == nil {
+									// file is marked as completed downloaded and exists...
+									return ""
+								} else {
+									// the user probably deleted the file, mark completed as false...
+									profile.SetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey), event.False)
+								}
+							}
+
 							log.Debugf("Downloading Profile Image %v %v %v", fp, mp, fileKey)
 							ev.Event.Data[event.FilePath] = fp
-							if _, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists {
-								ev.Event.Data[event.FileDownloadFinished] = constants.True
-							} else {
-								ev.Event.Data[event.FileDownloadFinished] = constants.False
-								fsf.DownloadFile(profile, conversation.ID, fp, mp, val, constants.ImagePreviewMaxSizeInBytes)
-							}
+							fsf.DownloadFile(profile, conversation.ID, fp, mp, val, constants.ImagePreviewMaxSizeInBytes)
 						} else {
+							// if image previews are disabled then ignore this event...
 							return ""
 						}
 					}
