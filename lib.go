@@ -775,7 +775,7 @@ func c_CheckDownloadStatus(profilePtr *C.char, profileLen C.int, fileKeyPtr *C.c
 func CheckDownloadStatus(profileOnion, fileKey string) {
 	profile := application.GetPeer(profileOnion)
 	path, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey))
-	if _, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists {
+	if value, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists && value == event.True {
 		eventHandler.Push(event.NewEvent(event.FileDownloaded, map[event.Field]string{
 			ProfileOnion:   profileOnion,
 			event.FileKey:  fileKey,
