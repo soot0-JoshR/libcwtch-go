@@ -260,7 +260,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 func GetProfileImage(profile peer.CwtchPeer, conversationInfo *model.Conversation, basepath string) string {
 	fileKey, err := profile.GetConversationAttribute(conversationInfo.ID, attr.PublicScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants.CustomProfileImageKey)))
 	if err == nil {
-		if _, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists {
+		if value, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists && value == event.True {
 			fp, _ := filesharing.GenerateDownloadPath(basepath, fileKey, true)
 			// check if the file exists...if it does then set the path...
 			if _, err := os.Stat(fp); err == nil {
