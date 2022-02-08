@@ -18,6 +18,9 @@ const PeerOnline = "peer-online"
 // Description is used on server contacts,
 const Description = "description"
 
+// ConversationNotificationPolicy is the attribute label for conversations. When App NotificationPolicy is OptIn a true value here opts in
+const ConversationNotificationPolicy = "notification-policy"
+
 const StateProfilePane = "state-profile-pane"
 const StateSelectedConversation = "state-selected-conversation"
 const StateSelectedProfileTime = "state-selected-profile-time"

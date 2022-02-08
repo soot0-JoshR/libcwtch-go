@@ -11,3 +11,23 @@ const (
 	// StatusError is an event response for event.Status signifying a call failed in error, ideally accompanied by a event.Error
 	StatusError = "error"
 )
+
+type NotificationType string
+
+const (
+	// NotificationNone enum for message["notification"] that means no notification
+	NotificationNone = NotificationType("None")
+	// NotificationEvent enum for message["notification"] that means emit a notification that a message event happened only
+	NotificationEvent = NotificationType("SimpleEvent")
+	// NotificationConversation enum for message["notification"] that means emit a notification event with Conversation handle included
+	NotificationConversation = NotificationType("ContactInfo")
+)
+
+const (
+	// ConversationNotificationPolicyDefault enum for conversations indicating to use global notification policy
+	ConversationNotificationPolicyDefault = "ConversationNotificationPolicy.Default"
+	// ConversationNotificationPolicyOptIn enum for conversation indicating to opt in to nofitications when allowed
+	ConversationNotificationPolicyOptIn = "ConversationNotificationPolicy.OptIn"
+	// ConversationNotificationPolicyNever enum for conversation indicating to opt in to never do notifications
+	ConversationNotificationPolicyNever = "ConversationNotificationPolicy.Never"
+)

@@ -222,22 +222,28 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 
 					lastMessage, _ := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0, 1)
 
+					notificationPolicy := constants2.ConversationNotificationPolicyDefault
+					if notificationPolicyAttr, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.ConversationNotificationPolicy); exists {
+						notificationPolicy = notificationPolicyAttr
+					}
+
 					contacts = append(contacts, Contact{
-						Name:           name,
-						Identifier:     conversationInfo.ID,
-						Onion:          conversationInfo.Handle,
-						Status:         connections.ConnectionStateName[state],
-						Picture:        cpicPath,
-						DefaultPicture: RandomProfileImage(conversationInfo.Handle),
-						Accepted:       conversationInfo.Accepted,
-						Blocked:        blocked,
-						SaveHistory:    saveHistory,
-						Messages:       count,
-						Unread:         0,
-						LastMessage:    strconv.Itoa(getLastMessageTime(lastMessage)),
-						IsGroup:        conversationInfo.IsGroup(),
-						GroupServer:    groupServer,
-						IsArchived:     isArchived == event.True,
+						Name:               name,
+						Identifier:         conversationInfo.ID,
+						Onion:              conversationInfo.Handle,
+						Status:             connections.ConnectionStateName[state],
+						Picture:            cpicPath,
+						DefaultPicture:     RandomProfileImage(conversationInfo.Handle),
+						Accepted:           conversationInfo.Accepted,
+						Blocked:            blocked,
+						SaveHistory:        saveHistory,
+						Messages:           count,
+						Unread:             0,
+						LastMessage:        strconv.Itoa(getLastMessageTime(lastMessage)),
+						IsGroup:            conversationInfo.IsGroup(),
+						GroupServer:        groupServer,
+						IsArchived:         isArchived == event.True,
+						NotificationPolicy: notificationPolicy,
 					})
 				}
 			}
@@ -311,6 +317,8 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			if ci.Accepted {
 				handleImagePreviews(profile, &ev.Event, ci.ID, ci.ID)
 			}
+
+			ev.Event.Data["notification"] = string(determineNotification(ci))
 		case event.NewMessageFromGroup:
 			// only needs contact nickname and picture, for displaying on popup notifications
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
@@ -333,6 +341,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			if ci != nil && ci.Accepted {
 				handleImagePreviews(profile, &ev.Event, conversationID, ci.ID)
 			}
+			ev.Event.Data["notification"] = string(determineNotification(ci))
 		case event.PeerAcknowledgement:
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
 			if ci != nil && err == nil {

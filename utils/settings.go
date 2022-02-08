@@ -26,6 +26,14 @@ var lock sync.Mutex
 const GlobalSettingsFilename = "ui.globals"
 const saltFile = "SALT"
 
+type NotificationPolicy string
+
+const (
+	NotificationPolicyMute       = NotificationPolicy("NotificationPolicy.Mute")
+	NotificationPolicyOptIn      = NotificationPolicy("NotificationPolicy.OptIn")
+	NotificationPolicyDefaultAll = NotificationPolicy("NotificationPolicy.DefaultAll")
+)
+
 type GlobalSettings struct {
 	Locale                  string
 	Theme                   string
@@ -34,6 +42,8 @@ type GlobalSettings struct {
 	ExperimentsEnabled      bool
 	Experiments             map[string]bool
 	BlockUnknownConnections bool
+	NotificationPolicy      NotificationPolicy
+	NotificationContent     string
 	StreamerMode            bool
 	StateRootPane           int
 	FirstTime               bool
@@ -62,6 +72,8 @@ var DefaultGlobalSettings = GlobalSettings{
 	StreamerMode:            false,
 	UIColumnModePortrait:    "DualpaneMode.Single",
 	UIColumnModeLandscape:   "DualpaneMode.CopyPortrait",
+	NotificationPolicy:      "NotificationPolicy.OptOut",
+	NotificationContent:     "NotificationContent.SimpleEvent",
 	DownloadPath:            "",
 	AllowAdvancedTorConfig:  false,
 	CustomTorrc:             "",
