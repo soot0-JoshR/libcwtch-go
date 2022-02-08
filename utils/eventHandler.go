@@ -460,16 +460,18 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 							basepath := settings.DownloadPath
 							fp, mp := filesharing.GenerateDownloadPath(basepath, fileKey, true)
 
-							if _, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists {
+							if value, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists && value == event.True {
 								if _, err := os.Stat(fp); err == nil {
 									// file is marked as completed downloaded and exists...
 									return ""
+								} else {
+									// the user probably deleted the file, mark completed as false...
+									profile.SetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey), event.False)
 								}
 							}
 
 							log.Debugf("Downloading Profile Image %v %v %v", fp, mp, fileKey)
 							ev.Event.Data[event.FilePath] = fp
-							ev.Event.Data[event.FileDownloadFinished] = constants.False
 							fsf.DownloadFile(profile, conversation.ID, fp, mp, val, constants.ImagePreviewMaxSizeInBytes)
 						} else {
 							// if image previews are disabled then ignore this event...
