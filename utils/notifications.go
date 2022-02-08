@@ -8,30 +8,44 @@ import (
 
 func determineNotification(ci *model.Conversation) constants.NotificationType {
 	settings := ReadGlobalSettings()
-
 	switch settings.NotificationPolicy {
-	case NotificationPolicyNone:
+	case NotificationPolicyMute:
 		return constants.NotificationNone
-	case NotificationPolicyOptOut:
-		if ci != nil {
-			if optOut, exists := ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.NotificationOptOut); exists && optOut == "true" {
-				return constants.NotificationNone
-			}
-		}
-		if settings.NotificationContent == "NotificationContent.ContactInfo" {
-			return constants.NotificationConversation
-		}
-		return constants.NotificationEvent
 	case NotificationPolicyOptIn:
 		if ci != nil {
-			if optIn, exists := ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.NotificationOptIn); exists && optIn == "true" {
-				if settings.NotificationContent == "NotificationContent.ContactInfo" {
-					return constants.NotificationConversation
+			if policy, exists := ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.ConversationNotificationPolicy); exists {
+				switch policy {
+				case constants.ConversationNotificationPolicyDefault:
+					return constants.NotificationNone
+				case constants.ConversationNotificationPolicyNever:
+					return constants.NotificationNone
+				case constants.ConversationNotificationPolicyOptIn:
+					return notificationContentToNotificationType(settings.NotificationContent)
 				}
-				return constants.NotificationEvent
 			}
 		}
 		return constants.NotificationNone
+	case NotificationPolicyDefaultAll:
+		if ci != nil {
+			if policy, exists := ci.GetAttribute(attr.LocalScope, attr.ProfileZone, constants.ConversationNotificationPolicy); exists {
+				switch policy {
+				case constants.ConversationNotificationPolicyNever:
+					return constants.NotificationNone
+				case constants.ConversationNotificationPolicyDefault:
+					fallthrough
+				case constants.ConversationNotificationPolicyOptIn:
+					return notificationContentToNotificationType(settings.NotificationContent)
+				}
+			}
+		}
+		return notificationContentToNotificationType(settings.NotificationContent)
 	}
 	return constants.NotificationNone
+}
+
+func notificationContentToNotificationType(notificationContent string) constants.NotificationType {
+	if notificationContent == "NotificationContent.ContactInfo" {
+		return constants.NotificationConversation
+	}
+	return constants.NotificationEvent
 }

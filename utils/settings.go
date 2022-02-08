@@ -29,9 +29,9 @@ const saltFile = "SALT"
 type NotificationPolicy string
 
 const (
-	NotificationPolicyNone   = NotificationPolicy("NotificationPolicy.None")
-	NotificationPolicyOptOut = NotificationPolicy("NotificationPolicy.OptOut")
-	NotificationPolicyOptIn  = NotificationPolicy("NotificationPolicy.OptIn")
+	NotificationPolicyMute       = NotificationPolicy("NotificationPolicy.Mute")
+	NotificationPolicyOptIn      = NotificationPolicy("NotificationPolicy.OptIn")
+	NotificationPolicyDefaultAll = NotificationPolicy("NotificationPolicy.DefaultAll")
 )
 
 type GlobalSettings struct {

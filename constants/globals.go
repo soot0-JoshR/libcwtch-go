@@ -22,3 +22,12 @@ const (
 	// NotificationConversation enum for message["notification"] that means emit a notification event with Conversation handle included
 	NotificationConversation = NotificationType("ContactInfo")
 )
+
+const (
+	// ConversationNotificationPolicyDefault enum for conversations indicating to use global notification policy
+	ConversationNotificationPolicyDefault = "ConversationNotificationPolicy.Default"
+	// ConversationNotificationPolicyOptIn enum for conversation indicating to opt in to nofitications when allowed
+	ConversationNotificationPolicyOptIn = "ConversationNotificationPolicy.OptIn"
+	// ConversationNotificationPolicyNever enum for conversation indicating to opt in to never do notifications
+	ConversationNotificationPolicyNever = "ConversationNotificationPolicy.Never"
+)

@@ -220,13 +220,9 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 
 					lastMessage, _ := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0, 1)
 
-					notificationOptIn := false
-					if notificationOptInAttr, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.NotificationOptIn); exists {
-						notificationOptIn = notificationOptInAttr == "true"
-					}
-					notificationOptOut := false
-					if notificationOptOutAttr, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.NotificationOptOut); exists {
-						notificationOptOut = notificationOptOutAttr == "true"
+					notificationPolicy := constants2.ConversationNotificationPolicyDefault
+					if notificationPolicyAttr, exists := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.ConversationNotificationPolicy); exists {
+						notificationPolicy = notificationPolicyAttr
 					}
 
 					contacts = append(contacts, Contact{
@@ -245,8 +241,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						IsGroup:            conversationInfo.IsGroup(),
 						GroupServer:        groupServer,
 						IsArchived:         isArchived == event.True,
-						NotificationOptIn:  notificationOptIn,
-						NotificationOptOut: notificationOptOut,
+						NotificationPolicy: notificationPolicy,
 					})
 				}
 			}

@@ -16,6 +16,5 @@ type Contact struct {
 	GroupServer        string `json:"groupServer"`
 	IsArchived         bool   `json:"isArchived"`
 	Identifier         int    `json:"identifier"`
-	NotificationOptIn  bool   `json:"notificationOptIn""`
-	NotificationOptOut bool   `json:"notificationOptOut""`
+	NotificationPolicy string `json:"notificationPolicy""`
 }
