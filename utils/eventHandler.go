@@ -456,16 +456,17 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 						fsf, err := filesharing.FunctionalityGate(settings.Experiments)
 						imagePreviewsEnabled := settings.Experiments["filesharing-images"]
 						if err == nil && imagePreviewsEnabled && conversation.Accepted {
+
+							basepath := settings.DownloadPath
+							fp, mp := filesharing.GenerateDownloadPath(basepath, fileKey, true)
+
 							if _, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists {
-								basepath := settings.DownloadPath
-								fp, _ := filesharing.GenerateDownloadPath(basepath, fileKey, true)
 								if _, err := os.Stat(fp); err == nil {
 									// file is marked as completed downloaded and exists...
 									return ""
 								}
 							}
-							basepath := settings.DownloadPath
-							fp, mp := filesharing.GenerateDownloadPath(basepath, fileKey, true)
+
 							log.Debugf("Downloading Profile Image %v %v %v", fp, mp, fileKey)
 							ev.Event.Data[event.FilePath] = fp
 							ev.Event.Data[event.FileDownloadFinished] = constants.False
