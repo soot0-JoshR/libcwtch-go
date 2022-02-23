@@ -72,7 +72,7 @@ var DefaultGlobalSettings = GlobalSettings{
 	StreamerMode:            false,
 	UIColumnModePortrait:    "DualpaneMode.Single",
 	UIColumnModeLandscape:   "DualpaneMode.CopyPortrait",
-	NotificationPolicy:      "NotificationPolicy.OptOut",
+	NotificationPolicy:      "NotificationPolicy.Mute",
 	NotificationContent:     "NotificationContent.SimpleEvent",
 	DownloadPath:            "",
 	AllowAdvancedTorConfig:  false,
