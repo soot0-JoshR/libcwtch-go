@@ -16,19 +16,19 @@ windows: libCwtch.dll
 
 libCwtch.so: lib.go 
 	./switch-ffi.sh
-	go build -buildmode c-shared -o libCwtch.so
+	go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell date +%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.so
 
 libCwtch.dylib: lib.go 
 	./switch-ffi.sh
-	go build -buildmode c-shared -o libCwtch.dylib
+	go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell date +%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.dylib
 
 cwtch.aar: lib.go
 	./switch-gomobile.sh
-	gomobile bind -target android
+	gomobile bind -target android -ldflags="-X cwtch.buildVer=$(shell git describe --tags) -X cwtch.buildDate=$(shell date +%G-%m-%d-%H-%M)"
 
 libCwtch.dll: lib.go
 	./switch-ffi.sh
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc-win32 go build -buildmode c-shared -o libCwtch.dll
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc-win32 go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell date +%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.dll
 
 clean: 
 	rm -f cwtch.aar cwtch_go.apk libCwtch.h libCwtch.so cwtch-sources.jar libCwtch.dll libCwtch.dylib
