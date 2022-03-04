@@ -341,7 +341,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			if ci != nil && ci.Accepted {
 				handleImagePreviews(profile, &ev.Event, conversationID, ci.ID)
 			}
-			gci, err := profile.GetConversationInfo(conversationID)
+			gci, _ := profile.GetConversationInfo(conversationID)
 			ev.Event.Data["notification"] = string(determineNotification(gci))
 		case event.PeerAcknowledgement:
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])

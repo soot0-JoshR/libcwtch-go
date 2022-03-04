@@ -4,6 +4,7 @@ import (
 	"cwtch.im/cwtch/event"
 	"cwtch.im/cwtch/model"
 	"cwtch.im/cwtch/model/attr"
+	constants2 "cwtch.im/cwtch/model/constants"
 	"cwtch.im/cwtch/peer"
 	"cwtch.im/cwtch/protocol/connections"
 	"fmt"
@@ -57,5 +58,9 @@ func (gf *GroupFunctionality) GetServerInfo(serverOnion string, profile peer.Cwt
 	}
 
 	description, _ := serverInfo.GetAttribute(attr.LocalScope, attr.ServerZone, constants.Description)
-	return Server{Onion: serverOnion, Identifier: serverInfo.ID, Status: connections.ConnectionStateName[profile.GetPeerState(serverInfo.Handle)], Keys: serverKeys, Description: description}
+	startTimeStr := serverInfo.Attributes[attr.LocalScope.ConstructScopedZonedPath(attr.LegacyGroupZone.ConstructZonedPath(constants2.SyncPreLastMessageTime)).ToString()]
+	recentTimeStr := serverInfo.Attributes[attr.LocalScope.ConstructScopedZonedPath(attr.LegacyGroupZone.ConstructZonedPath(constants2.SyncMostRecentMessageTime)).ToString()]
+	syncStatus := SyncStatus{startTimeStr, recentTimeStr}
+
+	return Server{Onion: serverOnion, Identifier: serverInfo.ID, Status: connections.ConnectionStateName[profile.GetPeerState(serverInfo.Handle)], Keys: serverKeys, Description: description, SyncProgress: syncStatus}
 }

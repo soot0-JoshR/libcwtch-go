@@ -32,7 +32,6 @@ import (
 	"cwtch.im/cwtch/functionality/filesharing"
 	"cwtch.im/cwtch/model"
 	"cwtch.im/cwtch/model/attr"
-	"cwtch.im/cwtch/peer"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
@@ -54,6 +53,12 @@ const (
 	// ProfileOnion is an event field that contains the handle for a given profile.
 	// todo: this should probably be moved back into Cwtch, and renamed ProfileHandle (onions are too tor-specific)
 	ProfileOnion = event.Field("ProfileOnion")
+)
+
+// supplied by make
+var (
+	buildVer  string
+	buildDate string
 )
 
 var application app.Application
@@ -105,6 +110,8 @@ func StartCwtch(appDir string, torPath string) int {
 		log.SetLevel(log.LevelDebug)
 	}
 	log.Infof("StartCwtch(...)")
+	log.Debugf("builddate: %v buildver: %v", buildDate, buildVer)
+
 	// Quick hack check that we're being called with the correct params
 	// On android a stale worker could be calling us with "last apps" directory. Best to abort fast so the app can make a new worker
 	if runtime.GOOS == "android" {
@@ -178,24 +185,6 @@ func _startCwtch(appDir string, torPath string) {
 	servers.InitServers(&globalACN, appDir, eventHandler.Push)
 
 	eventHandler.HandleApp(application)
-
-	peer.DefaultEventsToHandle = []event.Type{
-		event.EncryptedGroupMessage,
-		event.NewMessageFromPeerEngine,
-		event.PeerAcknowledgement,
-		event.PeerError,
-		event.SendMessageToPeerError,
-		event.SendMessageToGroupError,
-		event.NewGetValMessageFromPeer,
-		event.PeerStateChange,
-		event.NewRetValMessageFromPeer,
-		event.NewGroupInvite,
-		event.ServerStateChange,
-		event.ProtocolEngineStopped,
-		event.RetryServerRequest,
-		event.ManifestReceived,
-		event.FileDownloaded,
-	}
 
 	// Settings may have changed...
 	settings = utils.ReadGlobalSettings()
@@ -1019,7 +1008,6 @@ func ShutdownCwtch() {
 	if application != nil {
 		// Kill the isolate
 		eventHandler.Push(event.NewEvent(event.Shutdown, map[event.Field]string{}))
-
 		servers.Shutdown()
 		// Allow for the shutdown events to go through and then purge everything else...
 		log.Infof("Shutting Down Application...")
