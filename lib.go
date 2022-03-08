@@ -998,6 +998,52 @@ func ChangePassword(profileOnion string, oldPassword string, newPassword string,
 	}
 }
 
+//export c_ExportProfile
+func c_ExportProfile(profile_ptr *C.char, profile_len C.int, file_ptr *C.char, file_len C.int) {
+	profileOnion := C.GoStringN(profile_ptr, profile_len)
+	file := C.GoStringN(file_ptr, file_len)
+	ExportProfile(profileOnion, file)
+}
+
+// ExportProfile provides a wrapper around profile.ExportProfile
+func ExportProfile(profileOnion string, file string) {
+	profile := application.GetPeer(profileOnion)
+	profile.Export(file)
+}
+
+
+//export c_ExportProfile
+func c_Import(profile_ptr *C.char, profile_len C.int, file_ptr *C.char, file_len C.int) {
+	profileOnion := C.GoStringN(profile_ptr, profile_len)
+	file := C.GoStringN(file_ptr, file_len)
+	ExportProfile(profileOnion, file)
+}
+
+//export c_ImportProfile
+func c_ImportProfile(file_ptr *C.char, file_len C.int, passwordPtr *C.char, passwordLen C.int)  *C.char {
+	password := C.GoStringN(passwordPtr, passwordLen)
+	exportedCwtchFile := C.GoStringN(file_ptr, file_len)
+	return C.CString(ImportProfile(exportedCwtchFile, password))
+}
+
+// ImportProfile is a wrapper around application.ImportProfile
+func ImportProfile(exportedCwtchFile string, pass string) string {
+	_, err := application.ImportProfile(exportedCwtchFile, pass)
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+
+//export c_SetMessageAttribute
+func c_SetMessageAttribute(profile_ptr *C.char, profile_len C.int, conversation_id C.int, channel_id C.int, message_id C.int, key_ptr *C.char, key_len C.int, val_ptr *C.char, val_len C.int) {
+	profileOnion := C.GoStringN(profile_ptr, profile_len)
+	key := C.GoStringN(key_ptr, key_len)
+	value := C.GoStringN(val_ptr, val_len)
+	SetMessageAttribute(profileOnion, int(conversation_id), int(channel_id), int(message_id), key, value)
+}
+
 //export c_ShutdownCwtch
 func c_ShutdownCwtch() {
 	ShutdownCwtch()
@@ -1106,6 +1152,7 @@ func DeleteServer(onion string, currentPassword string) {
 		}
 	}
 }
+
 
 //export c_LaunchServers
 func c_LaunchServers() {
