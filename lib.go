@@ -8,14 +8,12 @@ import "C"
 
 import (
 	"crypto/rand"
+	constants2 "cwtch.im/cwtch/model/constants"
 	"cwtch.im/cwtch/protocol/files"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	path "path/filepath"
-	"strconv"
-
-	constants2 "cwtch.im/cwtch/model/constants"
 
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
 
@@ -294,6 +292,19 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 	return acn
 }
 
+//export c_Started
+func c_Started() C.int {
+	return C.int(Started())
+}
+
+// Started returns 1 if application is initialized and 0 if it is null
+func Started() int {
+	if application == nil {
+		return 0
+	}
+	return 1
+}
+
 //export c_ReconnectCwtchForeground
 func c_ReconnectCwtchForeground() {
 	ReconnectCwtchForeground()
@@ -302,7 +313,7 @@ func c_ReconnectCwtchForeground() {
 // Like StartCwtch, but StartCwtch has already been called so we don't need to restart Tor etc (probably)
 // Do need to re-send initial state tho, eg profiles that are already loaded
 func ReconnectCwtchForeground() {
-	log.Infof("Reconnecting cwtchforeground")
+	log.Infof("Reconnecting cwtch foreground")
 	if application == nil {
 		log.Errorf("ReconnectCwtchForeground: Application is nil, presuming stale thread, EXITING Reconnect\n")
 		return
@@ -311,7 +322,7 @@ func ReconnectCwtchForeground() {
 	// populate profile list
 	peerList := application.ListProfiles()
 	for _, onion := range peerList {
-		eventHandler.Push(event.NewEvent(event.NewPeer, map[event.Field]string{event.Identity: onion}))
+		eventHandler.Push(event.NewEvent(event.NewPeer, map[event.Field]string{event.Identity: onion, "Reload": event.True}))
 	}
 
 	settings := utils.ReadGlobalSettings()
@@ -319,17 +330,6 @@ func ReconnectCwtchForeground() {
 	for _, profileOnion := range peerList {
 		// fix peerpeercontact message counts
 		profile := application.GetPeer(profileOnion)
-		conversations, _ := profile.FetchConversations()
-		for _, conversation := range conversations {
-			if (conversation.IsGroup() && groupHandler != nil) || !conversation.IsServer() {
-				totalMessages, _ := profile.GetChannelMessageCount(conversation.ID, 0)
-				eventHandler.Push(event.NewEvent(event.MessageCounterResync, map[event.Field]string{
-					event.Identity:       profileOnion,
-					event.ConversationID: strconv.Itoa(conversation.ID),
-					event.Data:           strconv.Itoa(totalMessages),
-				}))
-			}
-		}
 
 		// Group Experiment Server Refresh
 		if groupHandler != nil {
