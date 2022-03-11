@@ -535,7 +535,9 @@ func c_AcceptConversation(profilePtr *C.char, profileLen C.int, conversation_id 
 // for further action (e.g. messaging / connecting to the server / joining the group etc.)
 func AcceptConversation(profileOnion string, conversationID int) {
 	profile := application.GetPeer(profileOnion)
-	profile.AcceptConversation(conversationID)
+	if profile != nil {
+		profile.AcceptConversation(conversationID)
+	}
 }
 
 //export c_BlockContact
@@ -545,7 +547,9 @@ func c_BlockContact(profilePtr *C.char, profileLen C.int, conversation_id C.int)
 
 func BlockContact(profileOnion string, conversationID int) {
 	profile := application.GetPeer(profileOnion)
-	profile.BlockConversation(conversationID)
+	if profile != nil {
+		profile.BlockConversation(conversationID)
+	}
 }
 
 //export c_UnblockContact
@@ -555,7 +559,9 @@ func c_UnblockContact(profilePtr *C.char, profileLen C.int, conversation_id C.in
 
 func UnblockContact(profileOnion string, conversationID int) {
 	profile := application.GetPeer(profileOnion)
-	profile.UnblockConversation(conversationID)
+	if profile != nil {
+		profile.UnblockConversation(conversationID)
+	}
 }
 
 //export c_GetMessage
@@ -584,20 +590,22 @@ func GetMessage(profileOnion string, conversationID int, messageIndex int) strin
 	// these requests complete almost immediately v.s. being stalled for seconds to minutes on large groups.
 	if application != nil {
 		profile := application.GetPeer(profileOnion)
-		messages, err := profile.GetMostRecentMessages(conversationID, 0, messageIndex, 1)
-		if err == nil && len(messages) == 1 {
-			time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
-			message.Message = model.Message{
-				Message:      messages[0].Body,
-				Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
-				Error:        messages[0].Attr[constants2.AttrErr],
-				PeerID:       messages[0].Attr[constants2.AttrAuthor],
-				Timestamp:    time,
+		if profile != nil {
+			messages, err := profile.GetMostRecentMessages(conversationID, 0, messageIndex, 1)
+			if err == nil && len(messages) == 1 {
+				time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
+				message.Message = model.Message{
+					Message:      messages[0].Body,
+					Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
+					Error:        messages[0].Attr[constants2.AttrErr],
+					PeerID:       messages[0].Attr[constants2.AttrAuthor],
+					Timestamp:    time,
+				}
+				message.ID = messages[0].ID
+				message.Attributes = messages[0].Attr
+				message.ContactImage = utils.RandomProfileImage(message.PeerID)
+				message.ContentHash = model.CalculateContentHash(messages[0].Attr[constants2.AttrAuthor], messages[0].Body)
 			}
-			message.ID = messages[0].ID
-			message.Attributes = messages[0].Attr
-			message.ContactImage = utils.RandomProfileImage(message.PeerID)
-			message.ContentHash = model.CalculateContentHash(messages[0].Attr[constants2.AttrAuthor], messages[0].Body)
 		}
 	}
 	bytes, _ := json.Marshal(message)
@@ -620,20 +628,22 @@ func GetMessageByID(profileOnion string, conversationID int, messageID int) stri
 	// these requests complete almost immediately v.s. being stalled for seconds to minutes on large groups.
 	if application != nil {
 		profile := application.GetPeer(profileOnion)
-		dbmessage, attr, err := profile.GetChannelMessage(conversationID, 0, messageID)
-		if err == nil {
-			time, _ := time.Parse(time.RFC3339Nano, attr[constants2.AttrSentTimestamp])
-			message.Message = model.Message{
-				Message:      dbmessage,
-				Acknowledged: attr[constants2.AttrAck] == constants2.True,
-				Error:        attr[constants2.AttrErr],
-				PeerID:       attr[constants2.AttrAuthor],
-				Timestamp:    time,
+		if profile != nil {
+			dbmessage, attr, err := profile.GetChannelMessage(conversationID, 0, messageID)
+			if err == nil {
+				time, _ := time.Parse(time.RFC3339Nano, attr[constants2.AttrSentTimestamp])
+				message.Message = model.Message{
+					Message:      dbmessage,
+					Acknowledged: attr[constants2.AttrAck] == constants2.True,
+					Error:        attr[constants2.AttrErr],
+					PeerID:       attr[constants2.AttrAuthor],
+					Timestamp:    time,
+				}
+				message.ID = messageID
+				message.Attributes = attr
+				message.ContactImage = utils.RandomProfileImage(message.PeerID)
+				message.ContentHash = model.CalculateContentHash(attr[constants2.AttrAuthor], dbmessage)
 			}
-			message.ID = messageID
-			message.Attributes = attr
-			message.ContactImage = utils.RandomProfileImage(message.PeerID)
-			message.ContentHash = model.CalculateContentHash(attr[constants2.AttrAuthor], dbmessage)
 		}
 	}
 	bytes, _ := json.Marshal(message)
@@ -652,25 +662,27 @@ func GetMessagesByContentHash(profileOnion string, handle int, contentHash strin
 	var message EnhancedMessage
 	if application != nil {
 		profile := application.GetPeer(profileOnion)
-		offset, err := profile.GetChannelMessageByContentHash(handle, 0, contentHash)
-		if err == nil {
-			messages, err := profile.GetMostRecentMessages(handle, 0, offset, 1)
+		if profile != nil {
+			offset, err := profile.GetChannelMessageByContentHash(handle, 0, contentHash)
 			if err == nil {
-				time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
-				message.Message = model.Message{
-					Message:      messages[0].Body,
-					Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
-					Error:        messages[0].Attr[constants2.AttrErr],
-					PeerID:       messages[0].Attr[constants2.AttrAuthor],
-					Timestamp:    time,
+				messages, err := profile.GetMostRecentMessages(handle, 0, offset, 1)
+				if err == nil {
+					time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
+					message.Message = model.Message{
+						Message:      messages[0].Body,
+						Acknowledged: messages[0].Attr[constants2.AttrAck] == constants2.True,
+						Error:        messages[0].Attr[constants2.AttrErr],
+						PeerID:       messages[0].Attr[constants2.AttrAuthor],
+						Timestamp:    time,
+					}
+					message.ID = messages[0].ID
+					message.Attributes = messages[0].Attr
+					message.ContactImage = utils.RandomProfileImage(message.PeerID)
+					message.LocalIndex = offset
+					message.ContentHash = contentHash
+				} else {
+					log.Errorf("error fetching local index {} ", err)
 				}
-				message.ID = messages[0].ID
-				message.Attributes = messages[0].Attr
-				message.ContactImage = utils.RandomProfileImage(message.PeerID)
-				message.LocalIndex = offset
-				message.ContentHash = contentHash
-			} else {
-				log.Errorf("error fetching local index {} ", err)
 			}
 		}
 	}
@@ -693,7 +705,9 @@ func c_SendMessage(profile_ptr *C.char, profile_len C.int, conversation_id C.int
 
 func SendMessage(profileOnion string, conversationID int, msg string) {
 	profile := application.GetPeer(profileOnion)
-	profile.SendMessage(conversationID, msg)
+	if profile != nil {
+		profile.SendMessage(conversationID, msg)
+	}
 }
 
 //export c_SendInvitation
@@ -707,7 +721,9 @@ func c_SendInvitation(profile_ptr *C.char, profile_len C.int, conversation_id C.
 // For groups, the profile must already have `target` as a contact.
 func SendInvitation(profileOnion string, conversationID int, targetID int) {
 	profile := application.GetPeer(profileOnion)
-	profile.SendInviteToConversation(conversationID, targetID)
+	if profile != nil {
+		profile.SendInviteToConversation(conversationID, targetID)
+	}
 }
 
 //export c_ShareFile
@@ -719,19 +735,21 @@ func c_ShareFile(profile_ptr *C.char, profile_len C.int, conversation_id C.int, 
 
 func ShareFile(profileOnion string, conversationID int, sharefilepath string) {
 	profile := application.GetPeer(profileOnion)
-	fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
-	if err != nil {
-		log.Errorf("file sharing error: %v", err)
-	} else {
-		fileKey, overlay, err := fh.ShareFile(sharefilepath, profile)
+	if profile != nil {
+		fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
 		if err != nil {
-			log.Errorf("error sharing file: %v", err)
-		} else if conversationID == -1 {
-			// FIXME: At some point we might want to allow arbitrary public files, but for now this API will assume
-			// there is only one, and it is the custom profile image...
-			profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.CustomProfileImageKey, fileKey)
+			log.Errorf("file sharing error: %v", err)
 		} else {
-			profile.SendMessage(conversationID, overlay)
+			fileKey, overlay, err := fh.ShareFile(sharefilepath, profile)
+			if err != nil {
+				log.Errorf("error sharing file: %v", err)
+			} else if conversationID == -1 {
+				// FIXME: At some point we might want to allow arbitrary public files, but for now this API will assume
+				// there is only one, and it is the custom profile image...
+				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.CustomProfileImageKey, fileKey)
+			} else {
+				profile.SendMessage(conversationID, overlay)
+			}
 		}
 	}
 }
@@ -747,12 +765,14 @@ func c_DownloadFile(profile_ptr *C.char, profile_len C.int, conversation_id C.in
 
 func DownloadFile(profileOnion string, conversationID int, filepath, manifestpath, filekey string) {
 	profile := application.GetPeer(profileOnion)
-	fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
-	if err != nil {
-		log.Errorf("file sharing error: %v", err)
-	} else {
-		// default to max 10 GB limit...
-		fh.DownloadFile(profile, conversationID, filepath, manifestpath, filekey, files.MaxManifestSize*files.DefaultChunkSize)
+	if profile != nil {
+		fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
+		if err != nil {
+			log.Errorf("file sharing error: %v", err)
+		} else {
+			// default to max 10 GB limit...
+			fh.DownloadFile(profile, conversationID, filepath, manifestpath, filekey, files.MaxManifestSize*files.DefaultChunkSize)
+		}
 	}
 }
 
@@ -763,23 +783,25 @@ func c_CheckDownloadStatus(profilePtr *C.char, profileLen C.int, fileKeyPtr *C.c
 
 func CheckDownloadStatus(profileOnion, fileKey string) {
 	profile := application.GetPeer(profileOnion)
-	path, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey))
-	if value, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists && value == event.True {
-		eventHandler.Push(event.NewEvent(event.FileDownloaded, map[event.Field]string{
-			ProfileOnion:   profileOnion,
-			event.FileKey:  fileKey,
-			event.FilePath: path,
-			event.TempFile: "",
-		}))
-	} else {
-		log.Infof("CheckDownloadStatus found .path but not .complete")
-		eventHandler.Push(event.NewEvent(event.FileDownloadProgressUpdate, map[event.Field]string{
-			ProfileOnion:           profileOnion,
-			event.FileKey:          fileKey,
-			event.Progress:         "-1",
-			event.FileSizeInChunks: "-1",
-			event.FilePath:         path,
-		}))
+	if profile != nil {
+		path, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey))
+		if value, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.complete", fileKey)); exists && value == event.True {
+			eventHandler.Push(event.NewEvent(event.FileDownloaded, map[event.Field]string{
+				ProfileOnion:   profileOnion,
+				event.FileKey:  fileKey,
+				event.FilePath: path,
+				event.TempFile: "",
+			}))
+		} else {
+			log.Infof("CheckDownloadStatus found .path but not .complete")
+			eventHandler.Push(event.NewEvent(event.FileDownloadProgressUpdate, map[event.Field]string{
+				ProfileOnion:           profileOnion,
+				event.FileKey:          fileKey,
+				event.Progress:         "-1",
+				event.FileSizeInChunks: "-1",
+				event.FilePath:         path,
+			}))
+		}
 	}
 }
 
@@ -792,15 +814,17 @@ func c_VerifyOrResumeDownload(profile_ptr *C.char, profile_len C.int, conversati
 
 func VerifyOrResumeDownload(profileOnion string, conversationID int, fileKey string) {
 	profile := application.GetPeer(profileOnion)
-	if manifestFilePath, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%v.manifest", fileKey)); exists {
-		if downloadfilepath, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey)); exists {
-			log.Infof("resuming %s", fileKey)
-			DownloadFile(profileOnion, conversationID, downloadfilepath, manifestFilePath, fileKey)
+	if profile != nil {
+		if manifestFilePath, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%v.manifest", fileKey)); exists {
+			if downloadfilepath, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey)); exists {
+				log.Infof("resuming %s", fileKey)
+				DownloadFile(profileOnion, conversationID, downloadfilepath, manifestFilePath, fileKey)
+			} else {
+				log.Errorf("found manifest path but not download path for %s", fileKey)
+			}
 		} else {
-			log.Errorf("found manifest path but not download path for %s", fileKey)
+			log.Errorf("no stored manifest path found for %s", fileKey)
 		}
-	} else {
-		log.Errorf("no stored manifest path found for %s", fileKey)
 	}
 }
 
@@ -834,13 +858,15 @@ func c_CreateGroup(profile_ptr *C.char, profile_len C.int, server_ptr *C.char, s
 // CreateGroup takes in a profile and server in addition to a name and creates a new group.
 func CreateGroup(profileHandle string, server string, name string) {
 	profile := application.GetPeer(profileHandle)
-	_, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
-	if err == nil {
-		conversationID, err := profile.StartGroup(name, server)
+	if profile != nil {
+		_, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 		if err == nil {
-			log.Debugf("created group %v on %v: $v", profileHandle, server, conversationID)
-		} else {
-			log.Errorf("error creating group or %v on server %v: %v", profileHandle, server, err)
+			conversationID, err := profile.StartGroup(name, server)
+			if err == nil {
+				log.Debugf("created group %v on %v: $v", profileHandle, server, conversationID)
+			} else {
+				log.Errorf("error creating group or %v on server %v: %v", profileHandle, server, err)
+			}
 		}
 	}
 }
@@ -872,7 +898,9 @@ func c_ArchiveConversation(profile_ptr *C.char, profile_len C.int, conversation_
 // ArchiveConversation sets the conversation to archived
 func ArchiveConversation(profileHandle string, conversationID int) {
 	profile := application.GetPeer(profileHandle)
-	profile.SetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants.Archived)), constants2.True)
+	if profile != nil {
+		profile.SetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(constants.Archived)), constants2.True)
+	}
 }
 
 //export c_DeleteContact
@@ -884,7 +912,9 @@ func c_DeleteContact(profile_ptr *C.char, profile_len C.int, conversation_id C.i
 // DeleteContact removes all trace of the contact from the profile
 func DeleteContact(profileHandle string, conversationID int) {
 	profile := application.GetPeer(profileHandle)
-	profile.DeleteConversation(conversationID)
+	if profile != nil {
+		profile.DeleteConversation(conversationID)
+	}
 }
 
 //export c_ImportBundle
@@ -898,17 +928,19 @@ func c_ImportBundle(profile_ptr *C.char, profile_len C.int, bundle_ptr *C.char, 
 // different formats (e.g. a peer address, a group invite, a server key bundle, or a combination)
 func ImportBundle(profileOnion string, bundle string) {
 	profile := application.GetPeer(profileOnion)
-	response := profile.ImportBundle(bundle)
+	if profile != nil {
+		response := profile.ImportBundle(bundle)
 
-	// We might have added a new server, so refresh the server list if applicable...
-	groupHandler, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
-	if err == nil {
-		serverListForOnion := groupHandler.GetServerInfoList(profile)
-		serversListBytes, _ := json.Marshal(serverListForOnion)
-		eventHandler.Push(event.NewEvent(groups.UpdateServerInfo, map[event.Field]string{"ProfileOnion": profileOnion, groups.ServerList: string(serversListBytes)}))
+		// We might have added a new server, so refresh the server list if applicable...
+		groupHandler, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments)
+		if err == nil {
+			serverListForOnion := groupHandler.GetServerInfoList(profile)
+			serversListBytes, _ := json.Marshal(serverListForOnion)
+			eventHandler.Push(event.NewEvent(groups.UpdateServerInfo, map[event.Field]string{"ProfileOnion": profileOnion, groups.ServerList: string(serversListBytes)}))
+		}
+
+		eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: response.Error()}))
 	}
-
-	eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: response.Error()}))
 }
 
 //export c_SetProfileAttribute
@@ -926,14 +958,16 @@ func c_SetProfileAttribute(profile_ptr *C.char, profile_len C.int, key_ptr *C.ch
 // Key must have the format zone.key where Zone is defined in Cwtch. Unknown zones are not permitted.
 func SetProfileAttribute(profileOnion string, key string, value string) {
 	profile := application.GetPeer(profileOnion)
-	zone, key := attr.ParseZone(key)
+	if profile != nil {
+		zone, key := attr.ParseZone(key)
 
-	// TODO We only allow public.profile.zone to be set for now.
-	// All other scopes and zones need to be added explicitly or handled by Cwtch.
-	if zone == attr.ProfileZone && key == constants.Name {
-		profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name, value)
-	} else {
-		log.Errorf("attempted to set an attribute with an unknown zone: %v", key)
+		// TODO We only allow public.profile.zone to be set for now.
+		// All other scopes and zones need to be added explicitly or handled by Cwtch.
+		if zone == attr.ProfileZone && key == constants.Name {
+			profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name, value)
+		} else {
+			log.Errorf("attempted to set an attribute with an unknown zone: %v", key)
+		}
 	}
 }
 
@@ -988,14 +1022,47 @@ func c_ChangePassword(profile_ptr *C.char, profile_len C.int, oldpassword_ptr *C
 // ChangePassword provides a wrapper around profile.ChangePassword
 func ChangePassword(profileOnion string, oldPassword string, newPassword string, newPasswordAgain string) {
 	profile := application.GetPeer(profileOnion)
-	log.Infof("changing password for %v", profileOnion)
-	err := profile.ChangePassword(oldPassword, newPassword, newPasswordAgain)
-	log.Infof("change password result %v", err)
-	if err == nil {
-		eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: features.ConstructResponse("changepassword", constants.StatusSuccess).Error()}))
-	} else {
-		eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: features.ConstructResponse("changepassword", err.Error()).Error()}))
+	if profile != nil {
+		log.Infof("changing password for %v", profileOnion)
+		err := profile.ChangePassword(oldPassword, newPassword, newPasswordAgain)
+		log.Infof("change password result %v", err)
+		if err == nil {
+			eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: features.ConstructResponse("changepassword", constants.StatusSuccess).Error()}))
+		} else {
+			eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: features.ConstructResponse("changepassword", err.Error()).Error()}))
+		}
 	}
+}
+
+//export c_ExportProfile
+func c_ExportProfile(profile_ptr *C.char, profile_len C.int, file_ptr *C.char, file_len C.int) {
+	profileOnion := C.GoStringN(profile_ptr, profile_len)
+	file := C.GoStringN(file_ptr, file_len)
+	ExportProfile(profileOnion, file)
+}
+
+// ExportProfile provides a wrapper around profile.ExportProfile
+func ExportProfile(profileOnion string, file string) {
+	profile := application.GetPeer(profileOnion)
+	if profile != nil {
+		profile.Export(file)
+	}
+}
+
+//export c_ImportProfile
+func c_ImportProfile(file_ptr *C.char, file_len C.int, passwordPtr *C.char, passwordLen C.int) *C.char {
+	password := C.GoStringN(passwordPtr, passwordLen)
+	exportedCwtchFile := C.GoStringN(file_ptr, file_len)
+	return C.CString(ImportProfile(exportedCwtchFile, password))
+}
+
+// ImportProfile is a wrapper around application.ImportProfile
+func ImportProfile(exportedCwtchFile string, pass string) string {
+	_, err := application.ImportProfile(exportedCwtchFile, pass)
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 //export c_ShutdownCwtch
