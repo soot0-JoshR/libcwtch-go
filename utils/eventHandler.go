@@ -180,10 +180,13 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 
 					// Resolve the profile image of the contact
 					var cpicPath string
+					var defaultPath string
 					if conversationInfo.IsGroup() {
 						cpicPath = RandomGroupImage(conversationInfo.Handle)
+						defaultPath = RandomGroupImage(conversationInfo.Handle)
 					} else {
 						cpicPath = GetProfileImage(profile, conversationInfo, settings.DownloadPath)
+						defaultPath = RandomProfileImage(conversationInfo.Handle)
 					}
 
 					// Resolve Save History Setting
@@ -233,7 +236,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						Onion:              conversationInfo.Handle,
 						Status:             connections.ConnectionStateName[state],
 						Picture:            cpicPath,
-						DefaultPicture:     RandomProfileImage(conversationInfo.Handle),
+						DefaultPicture:     defaultPath,
 						Accepted:           conversationInfo.Accepted,
 						Blocked:            blocked,
 						SaveHistory:        saveHistory,
@@ -512,7 +515,7 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus := eh.app.GetEventBus(onion)
 	q := event.NewQueue()
 
-	// eventBus.Subscribe(event.NetworkStatus, q)
+	eventBus.Subscribe(event.NetworkStatus, q)
 	eventBus.Subscribe(event.ACNInfo, q)
 	eventBus.Subscribe(event.NewMessageFromPeer, q)
 	eventBus.Subscribe(event.UpdatedProfileAttribute, q)
