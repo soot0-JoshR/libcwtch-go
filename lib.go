@@ -690,6 +690,50 @@ func GetMessagesByContentHash(profileOnion string, handle int, contentHash strin
 	return string(bytes)
 }
 
+//export c_GetMessages
+// the pointer returned from this function **must** be Freed  by c_Free
+func c_GetMessages(profile_ptr *C.char, profile_len C.int, conversation_id C.int, message_index C.int, count C.int) *C.char {
+	profile := C.GoStringN(profile_ptr, profile_len)
+	return C.CString(GetMessages(profile, int(conversation_id), int(message_index), int(count)))
+}
+
+func GetMessages(profileOnion string, conversationID int, messageIndex int, count int) string {
+	var emessages []EnhancedMessage = make([]EnhancedMessage, count)
+
+	// There is an edge case that can happen on Android when the app is shutdown while fetching messages...
+	// The worker threads that are spawned can become activated again when the app is opened attempt to finish their job...
+	// In that case we skip processing and just return the empty message...
+	// Note: This is far less likely to happen now that the UI only requests messages *after* syncing has happened and
+	// these requests complete almost immediately v.s. being stalled for seconds to minutes on large groups.
+	if application != nil {
+		profile := application.GetPeer(profileOnion)
+		if profile != nil {
+			messages, err := profile.GetMostRecentMessages(conversationID, 0, messageIndex, count)
+			if err == nil {
+
+				for i, message := range messages {
+
+					time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
+					emessages[i].Message = model.Message{
+						Message:      message.Body,
+						Acknowledged: message.Attr[constants2.AttrAck] == constants2.True,
+						Error:        message.Attr[constants2.AttrErr],
+						PeerID:       message.Attr[constants2.AttrAuthor],
+						Timestamp:    time,
+					}
+					emessages[i].ID = message.ID
+					emessages[i].Attributes = message.Attr
+					emessages[i].ContactImage = utils.RandomProfileImage(emessages[i].PeerID)
+					emessages[i].ContentHash = model.CalculateContentHash(message.Attr[constants2.AttrAuthor], message.Body)
+				}
+			}
+
+		}
+	}
+	bytes, _ := json.Marshal(emessages)
+	return string(bytes)
+}
+
 //export c_FreePointer
 // Dangerous function. Should only be used as documented in `MEMORY.md`
 func c_FreePointer(ptr *C.char) {
@@ -697,43 +741,52 @@ func c_FreePointer(ptr *C.char) {
 }
 
 //export c_SendMessage
-func c_SendMessage(profile_ptr *C.char, profile_len C.int, conversation_id C.int, msg_ptr *C.char, msg_len C.int) {
+func c_SendMessage(profile_ptr *C.char, profile_len C.int, conversation_id C.int, msg_ptr *C.char, msg_len C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	msg := C.GoStringN(msg_ptr, msg_len)
-	SendMessage(profile, int(conversation_id), msg)
+	return C.CString(SendMessage(profile, int(conversation_id), msg))
+
 }
 
-func SendMessage(profileOnion string, conversationID int, msg string) {
+func SendMessage(profileOnion string, conversationID int, msg string) string {
 	profile := application.GetPeer(profileOnion)
 	if profile != nil {
-		profile.SendMessage(conversationID, msg)
+		id, err := profile.SendMessage(conversationID, msg)
+		if err == nil {
+			return GetMessageByID(profileOnion, conversationID, id)
+		}
 	}
+	return ""
 }
 
 //export c_SendInvitation
-func c_SendInvitation(profile_ptr *C.char, profile_len C.int, conversation_id C.int, target_id C.int) {
+func c_SendInvitation(profile_ptr *C.char, profile_len C.int, conversation_id C.int, target_id C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
-	SendInvitation(profile, int(conversation_id), int(target_id))
+	return C.CString(SendInvitation(profile, int(conversation_id), int(target_id)))
 }
 
 // SendInvitation sends an invitation from `profileOnion` to contact `handle` (peer or group)
 // asking them to add the contact `target`  (also peer or group).
 // For groups, the profile must already have `target` as a contact.
-func SendInvitation(profileOnion string, conversationID int, targetID int) {
+func SendInvitation(profileOnion string, conversationID int, targetID int) string {
 	profile := application.GetPeer(profileOnion)
 	if profile != nil {
-		profile.SendInviteToConversation(conversationID, targetID)
+		id, err := profile.SendInviteToConversation(conversationID, targetID)
+		if err == nil {
+			return GetMessageByID(profileOnion, conversationID, id)
+		}
 	}
+	return ""
 }
 
 //export c_ShareFile
-func c_ShareFile(profile_ptr *C.char, profile_len C.int, conversation_id C.int, filepath_ptr *C.char, filepath_len C.int) {
+func c_ShareFile(profile_ptr *C.char, profile_len C.int, conversation_id C.int, filepath_ptr *C.char, filepath_len C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	sharefilepath := C.GoStringN(filepath_ptr, filepath_len)
-	ShareFile(profile, int(conversation_id), sharefilepath)
+	return C.CString(ShareFile(profile, int(conversation_id), sharefilepath))
 }
 
-func ShareFile(profileOnion string, conversationID int, sharefilepath string) {
+func ShareFile(profileOnion string, conversationID int, sharefilepath string) string {
 	profile := application.GetPeer(profileOnion)
 	if profile != nil {
 		fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
@@ -748,10 +801,14 @@ func ShareFile(profileOnion string, conversationID int, sharefilepath string) {
 				// there is only one, and it is the custom profile image...
 				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.CustomProfileImageKey, fileKey)
 			} else {
-				profile.SendMessage(conversationID, overlay)
+				id, err := profile.SendMessage(conversationID, overlay)
+				if err == nil {
+					return GetMessageByID(profileOnion, conversationID, id)
+				}
 			}
 		}
 	}
+	return ""
 }
 
 //export c_DownloadFile
