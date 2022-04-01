@@ -31,3 +31,5 @@ const (
 	// ConversationNotificationPolicyNever enum for conversation indicating to opt in to never do notifications
 	ConversationNotificationPolicyNever = "ConversationNotificationPolicy.Never"
 )
+
+const DartIso8601 = "2006-01-02T15:04:05.999Z"

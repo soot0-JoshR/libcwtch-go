@@ -8,6 +8,7 @@ const Picture = "picture"
 const DefaultProfilePicture = "defaultPicture"
 const ShowBlocked = "show-blocked"
 const Archived = "archived"
+const LastSeenTime = "lastMessageSeenTime"
 
 const ProfileTypeV1DefaultPassword = "v1-defaultPassword"
 const ProfileTypeV1Password = "v1-userPassword"
