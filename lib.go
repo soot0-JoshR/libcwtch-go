@@ -1018,7 +1018,7 @@ func SetProfileAttribute(profileOnion string, key string, value string) {
 	if profile != nil {
 		zone, key := attr.ParseZone(key)
 
-		// TODO We only allow public.profile.zone to be set for now.
+		// TODO We only allow public.profile.key to be set for now.
 		// All other scopes and zones need to be added explicitly or handled by Cwtch.
 		if zone == attr.ProfileZone && key == constants.Name {
 			profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name, value)
@@ -1026,6 +1026,39 @@ func SetProfileAttribute(profileOnion string, key string, value string) {
 			log.Errorf("attempted to set an attribute with an unknown zone: %v", key)
 		}
 	}
+}
+
+// Attribute is a struct to return the dual values of an attempt at a Get*Attribute API call, meant to be json searlialized
+type Attribute struct {
+	Exists bool
+	Value  string
+}
+
+//export c_GetProfileAttribute
+func c_GetProfileAttribute(profile_ptr *C.char, profile_len C.int, key_ptr *C.char, key_len C.int) *C.char {
+	profileOnion := C.GoStringN(profile_ptr, profile_len)
+	key := C.GoStringN(key_ptr, key_len)
+	return C.CString(GetProfileAttribute(profileOnion, key))
+}
+
+// GetProfileAttribute provides a wrapper around profile.GetScopedZonedAttribute
+// Key must have the format zone.key where Zone is defined in Cwtch. Unknown zones are not permitted.
+// Currently forcing the Public Scope
+// Returns json of Attribute
+func GetProfileAttribute(profileOnion string, key string) string {
+	profile := application.GetPeer(profileOnion)
+	if profile != nil {
+		zone, key := attr.ParseZone(key)
+
+		res, exists := profile.GetScopedZonedAttribute(attr.PublicScope, zone, key)
+		attr := Attribute{exists, res}
+		json, _ := json.Marshal(attr)
+		return string(json)
+
+	}
+	empty := Attribute{false, ""}
+	json, _ := json.Marshal(empty)
+	return (string(json))
 }
 
 //export c_SetConversationAttribute
@@ -1037,10 +1070,37 @@ func c_SetConversationAttribute(profile_ptr *C.char, profile_len C.int, conversa
 }
 
 // SetConversationAttribute provides a wrapper around profile.SetProfileAttribute
+// key is of format Zone.Key, and the API forces the Local Scope
 func SetConversationAttribute(profileOnion string, conversationID int, key string, value string) {
 	profile := application.GetPeer(profileOnion)
 	zone, key := attr.ParseZone(key)
 	profile.SetConversationAttribute(conversationID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(key)), value)
+}
+
+//export c_GetConversationAttribute
+func c_GetConversationAttribute(profile_ptr *C.char, profile_len C.int, conversation_id C.int, key_ptr *C.char, key_len C.int) *C.char {
+	profileOnion := C.GoStringN(profile_ptr, profile_len)
+	key := C.GoStringN(key_ptr, key_len)
+	return C.CString(GetConversationAttribute(profileOnion, int(conversation_id), key))
+}
+
+// GetGonversationAttribute provides a wrapper around profile.GetGonversationAttribute
+// key is of format Scope.Zone.Key
+// Returns json of an Attribute
+func GetConversationAttribute(profileOnion string, conversationID int, key string) string {
+	profile := application.GetPeer(profileOnion)
+	if profile != nil {
+		scope, zonekey := attr.ParseScope(key)
+		zone, key := attr.ParseZone(zonekey)
+
+		res, err := profile.GetConversationAttribute(conversationID, scope.ConstructScopedZonedPath(zone.ConstructZonedPath(key)))
+		attr := Attribute{err == nil, res}
+		json, _ := json.Marshal(attr)
+		return string(json)
+	}
+	empty := Attribute{false, ""}
+	json, _ := json.Marshal(empty)
+	return (string(json))
 }
 
 //export c_SetMessageAttribute
