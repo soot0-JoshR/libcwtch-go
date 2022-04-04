@@ -201,6 +201,28 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						isArchived = event.False
 					}
 
+					unread := 0
+					lastSeenTimeStr, set := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.LastSeenTime)
+					if set {
+						lastSeenTime, err := time.Parse(constants2.DartIso8601, lastSeenTimeStr)
+						if err == nil {
+							// get last 100 messages and count how many are after the lastSeenTime (100 cus hte ui just shows 99+ after)
+							messages, err := profile.GetMostRecentMessages(conversationInfo.ID, 0, 0, 100)
+							if err == nil {
+								for _, message := range messages {
+									msgTime, err := time.Parse(time.RFC3339Nano, message.Attr[constants.AttrSentTimestamp])
+									if err == nil {
+										if msgTime.UTC().After(lastSeenTime.UTC()) {
+											unread++
+										} else {
+											break
+										}
+									}
+								}
+							}
+						}
+					}
+
 					groupServer, _ := conversationInfo.GetAttribute(attr.LocalScope, attr.LegacyGroupZone, constants.GroupServer)
 
 					stateHandle := conversationInfo.Handle
@@ -241,7 +263,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						Blocked:            blocked,
 						SaveHistory:        saveHistory,
 						Messages:           count,
-						Unread:             0,
+						Unread:             unread,
 						LastMessage:        strconv.Itoa(getLastMessageTime(lastMessage)),
 						IsGroup:            conversationInfo.IsGroup(),
 						GroupServer:        groupServer,
