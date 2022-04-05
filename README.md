@@ -21,6 +21,11 @@ Other version combinations untested and some definitely do not work.
 
 # Using
 
+## General Environment Variables
+
+- `LOG_FILE` if defined will mean all go logging will go to a file instead of stdout
+- `LOG_LEVEL` if set to `debug` will cause debug logging to be included in log output
+
 ## Linux Desktop:
  
  - `LD_LIBRARY_PATH` set to point to `libCwtch.so`
@@ -33,3 +38,7 @@ Other version combinations untested and some definitely do not work.
 ## Windows
 
 - copy libCwtch.dll into the directory of the `.exe` using it
+
+## MacOS
+
+- copy libCwtch.dylib into the directory you are executing from
