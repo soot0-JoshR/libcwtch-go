@@ -260,6 +260,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						Picture:            cpicPath,
 						DefaultPicture:     defaultPath,
 						Accepted:           conversationInfo.Accepted,
+						AccessControlList:  conversationInfo.ACL,
 						Blocked:            blocked,
 						SaveHistory:        saveHistory,
 						Messages:           count,
@@ -395,6 +396,8 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				accepted = constants.True
 			}
 
+			acl, _ := json.Marshal(conversationInfo.ACL)
+
 			lastMessage, _ := profile.GetMostRecentMessages(conversationID, 0, 0, 1)
 			ev.Event.Data["unread"] = strconv.Itoa(count) // if this is a new contact with messages attached then by-definition these are unread...
 			ev.Event.Data[constants2.Picture] = RandomProfileImage(conversationInfo.Handle)
@@ -403,6 +406,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			ev.Event.Data["nick"] = conversationInfo.Handle
 			ev.Event.Data["status"] = connections.ConnectionStateName[profile.GetPeerState(conversationInfo.Handle)]
 			ev.Event.Data["accepted"] = accepted
+			ev.Event.Data["accessControlList"] = string(acl)
 			ev.Event.Data["blocked"] = blocked
 			ev.Event.Data["loading"] = "false"
 			ev.Event.Data["lastMsgTime"] = strconv.Itoa(getLastMessageTime(lastMessage))
@@ -411,6 +415,11 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			// condition *should* never happen.
 			groupPic := RandomGroupImage(ev.Event.Data[event.GroupID])
 			ev.Event.Data[constants2.Picture] = groupPic
+
+			conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
+			conversationInfo, _ := profile.GetConversationInfo(conversationID)
+			acl, _ := json.Marshal(conversationInfo.ACL)
+			ev.Event.Data["accessControlList"] = string(acl)
 		case event.NewGroup:
 			// This event should only happen after we have validated the invite, as such the error
 			// condition *should* never happen.
@@ -418,8 +427,13 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			if invite, err := model.ValidateInvite(serializedInvite); err == nil {
 				groupPic := RandomGroupImage(invite.GroupID)
 				ev.Event.Data[constants2.Picture] = groupPic
+
+				conversationID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
+				conversationInfo, _ := profile.GetConversationInfo(conversationID)
+				acl, _ := json.Marshal(conversationInfo.ACL)
+				ev.Event.Data["accessControlList"] = string(acl)
 			} else {
-				log.Errorf("received a new group event which contained an invalid invite %v. this should never happen and likely means there is a bug in cwtch. Please file a ticket @ https://git.openprivcy.ca/cwtch.im/cwtch", err)
+				log.Errorf("received a new group event which contained an invalid invite %v. this should never happen and likely means there is a bug in cwtch. Please file a ticket @ https://git.openprivacy.ca/cwtch.im/cwtch", err)
 				return ""
 			}
 		case event.PeerStateChange:
