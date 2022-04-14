@@ -1380,5 +1380,37 @@ func SetServerAttribute(onion string, key string, val string) {
 
 // ***** END Server APIs *****
 
+//export c_GetDebugInfo
+func c_GetDebugInfo() *C.char {
+	return C.CString(GetDebugInfo())
+}
+
+type DebugInfo struct {
+	HeapAllocated float64
+	HeapInUse     float64
+	HeapReleased  float64
+	HeapObjects   uint64
+	NumThreads    uint64
+	SystemMemory  float64
+}
+
+func GetDebugInfo() string {
+	var memstats runtime.MemStats
+	runtime.ReadMemStats(&memstats)
+
+	const MegaByte = 1024.0 * 1024.0
+
+	debugInfo := new(DebugInfo)
+	debugInfo.HeapAllocated = float64(memstats.HeapAlloc) / MegaByte
+	debugInfo.HeapObjects = memstats.HeapObjects
+	debugInfo.NumThreads = uint64(runtime.NumGoroutine())
+	debugInfo.HeapReleased = float64(memstats.HeapReleased) / MegaByte
+	debugInfo.HeapInUse = float64(memstats.HeapInuse) / MegaByte
+	debugInfo.SystemMemory = float64(memstats.Sys) / MegaByte
+
+	data, _ := json.Marshal(debugInfo)
+	return string(data)
+}
+
 // Leave as is, needed by ffi
 func main() {}
