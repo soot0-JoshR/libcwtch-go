@@ -527,8 +527,7 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 							return ""
 						}
 					}
-
-					if val, err := profile.GetConversationAttribute(conversation.ID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(path))); err != nil && val != "" {
+					if val, err := profile.GetConversationAttribute(conversation.ID, attr.LocalScope.ConstructScopedZonedPath(zone.ConstructZonedPath(path))); err == nil || val != "" {
 						// we have a locally set override, don't pass this remote set public scope update to UI
 						return ""
 					}
