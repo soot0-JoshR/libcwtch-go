@@ -14,6 +14,7 @@ type Contact struct {
 	SaveHistory        string                  `json:"saveConversationHistory"`
 	Messages           int                     `json:"numMessages"`
 	Unread             int                     `json:"numUnread"`
+	LastSeenMessageId  int                     `json:"lastSeenMessageId"`
 	LastMessage        string                  `json:"lastMsgTime"`
 	IsGroup            bool                    `json:"isGroup"`
 	GroupServer        string                  `json:"groupServer"`

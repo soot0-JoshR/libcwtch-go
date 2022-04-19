@@ -202,6 +202,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					}
 
 					unread := 0
+					lastSeenMessageId := -1
 					lastSeenTimeStr, set := conversationInfo.GetAttribute(attr.LocalScope, attr.ProfileZone, constants2.LastSeenTime)
 					if set {
 						lastSeenTime, err := time.Parse(constants2.DartIso8601, lastSeenTimeStr)
@@ -215,6 +216,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 										if msgTime.UTC().After(lastSeenTime.UTC()) {
 											unread++
 										} else {
+											lastSeenMessageId = message.ID
 											break
 										}
 									}
@@ -265,6 +267,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						SaveHistory:        saveHistory,
 						Messages:           count,
 						Unread:             unread,
+						LastSeenMessageId:  lastSeenMessageId,
 						LastMessage:        strconv.Itoa(getLastMessageTime(lastMessage)),
 						IsGroup:            conversationInfo.IsGroup(),
 						GroupServer:        groupServer,
