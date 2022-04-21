@@ -25,6 +25,8 @@ Other version combinations untested and some definitely do not work.
 
 - `LOG_FILE` if defined will mean all go logging will go to a file instead of stdout
 - `LOG_LEVEL` if set to `debug` will cause debug logging to be included in log output
+- `CWTCH_PROFILE` if set to `1` will cause a memory profile to be written to `mem.prof` and all active goroutines
+written to `stdout` when `DebugInfo()` is called.
 
 ## Linux Desktop:
  

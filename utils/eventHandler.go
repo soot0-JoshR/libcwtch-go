@@ -35,8 +35,11 @@ type EventHandler struct {
 	profileEvents chan EventProfileEnvelope
 }
 
+// We should be reading from profile events pretty quickly, but we make this buffer fairly large...
+const profileEventsBufferSize = 512
+
 func NewEventHandler() *EventHandler {
-	eh := &EventHandler{app: nil, appBusQueue: event.NewQueue(), profileEvents: make(chan EventProfileEnvelope)}
+	eh := &EventHandler{app: nil, appBusQueue: event.NewQueue(), profileEvents: make(chan EventProfileEnvelope, profileEventsBufferSize)}
 	return eh
 }
 
