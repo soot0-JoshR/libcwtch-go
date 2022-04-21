@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	path "path/filepath"
+	"runtime/pprof"
 
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
 
@@ -1407,6 +1408,11 @@ func GetDebugInfo() string {
 	debugInfo.HeapReleased = float64(memstats.HeapReleased) / MegaByte
 	debugInfo.HeapInUse = float64(memstats.HeapInuse) / MegaByte
 	debugInfo.SystemMemory = float64(memstats.Sys) / MegaByte
+
+	pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+
+	f,_ := os.Create("mem.prof")
+	pprof.WriteHeapProfile(f)
 
 	data, _ := json.Marshal(debugInfo)
 	return string(data)
