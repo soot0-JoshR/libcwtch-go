@@ -714,7 +714,7 @@ func GetMessages(profileOnion string, conversationID int, messageIndex int, coun
 
 				for i, message := range messages {
 
-					time, _ := time.Parse(time.RFC3339Nano, messages[0].Attr[constants2.AttrSentTimestamp])
+					time, _ := time.Parse(time.RFC3339Nano, message.Attr[constants2.AttrSentTimestamp])
 					emessages[i].Message = model.Message{
 						Message:      message.Body,
 						Acknowledged: message.Attr[constants2.AttrAck] == constants2.True,
