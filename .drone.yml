@@ -158,10 +158,21 @@ steps:
       # TODO: upgrade to go1.16, remove mod/vendor, add go install for 1.16
       - echo `git describe --tags` > VERSION
       - echo `date +%G-%m-%d-%H-%M` > BUILDDATE
-  - name: build-macos
+  - name: build-macos-x64
     commands:
       - export PATH=$PATH:/usr/local/go/bin/
       - make macos
+  - name: build-macos-arm64
+    when:
+      event:
+        - push
+      status: [ success ]
+    commands:
+      - export PATH=$PATH:/usr/local/go/bin/
+      - ./switch-ffi.sh
+      - export VERSION=$(cat VERSION)
+      - export BUILDDATE=$(cat BUILDDATE)
+      - env GOARCH=arm64 GOOS=darwin CGO_ENABLED=1 go build -ldflags "-X main.buildVer=$VERSION -X main.buildDate=$BUILDDATE" -buildmode c-shared -o libCwtch.arm64.dylib
   - name: deploy-buildfiles
     environment:
       BUILDFILES_KEY:
@@ -177,6 +188,7 @@ steps:
       - export DIR=libCwtch-go-macos-`cat BUILDDATE`-`cat VERSION`
       - mkdir $DIR
       - mv libCwtch.dylib  $DIR/
+      - mv libCwtch.arm64.dylib $DIR/
       - cd $DIR
       - find . -type f -exec shasum -a 512 {} \; > ./../sha512s.txt
       - mv ./../sha512s.txt .
