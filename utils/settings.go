@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	path "path/filepath"
 	"sync"
 
@@ -65,7 +66,7 @@ var DefaultGlobalSettings = GlobalSettings{
 	Theme:                   "dark",
 	PreviousPid:             -1,
 	ExperimentsEnabled:      false,
-	Experiments:             make(map[string]bool),
+	Experiments:             map[string]bool{constants.MessageFormattingExperiment: true},
 	StateRootPane:           0,
 	FirstTime:               true,
 	BlockUnknownConnections: false,
