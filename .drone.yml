@@ -169,7 +169,7 @@ steps:
       status: [ success ]
     commands:
       - export PATH=$PATH:/usr/local/go/bin/
-      - make libCwtch.arm.dylib
+      - make libCwtch.arm64.dylib
   - name: deploy-buildfiles
     environment:
       BUILDFILES_KEY:
@@ -185,7 +185,7 @@ steps:
       - export DIR=libCwtch-go-macos-`cat BUILDDATE`-`cat VERSION`
       - mkdir $DIR
       - mv libCwtch.x64.dylib  $DIR/
-      - mv libCwtch.arm.dylib $DIR/
+      - mv libCwtch.arm64.dylib $DIR/
       - cd $DIR
       - find . -type f -exec shasum -a 512 {} \; > ./../sha512s.txt
       - mv ./../sha512s.txt .
