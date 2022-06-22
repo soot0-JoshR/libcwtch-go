@@ -8,7 +8,7 @@ all: linux android windows
 
 linux: libCwtch.so
 
-macos: libCwtch.x64.dylib libCwtch.arm.dylib
+macos: libCwtch.x64.dylib libCwtch.arm64.dylib
 
 android: cwtch.aar
 
@@ -22,7 +22,7 @@ libCwtch.x64.dylib: lib.go
 	./switch-ffi.sh
 	go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell date +%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.x64.dylib
 
-libCwtch.arm.dylib: lib.go
+libCwtch.arm64.dylib: lib.go
 	./switch-ffi.sh
 	env GOARCH=arm64 GOOS=darwin CGO_ENABLED=1 go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell date +%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.arm64.dylib
 
