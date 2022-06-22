@@ -6,6 +6,7 @@ C-bindings for the Go Cwtch Library.
     make linux
     make android
     make windows
+    make macos
 
 ## Android Build Notes
 
@@ -15,6 +16,12 @@ and gomobile commit bdb1ca9a1e083af5929a8214e8a056d638ebbf2d (2021 07 16)
 Go 1.17.4, NDK 22.1.7171670, and gomobile 4e6c2922fdeed32d3596616518aaee7b0d79ce55 (2021 12 07) appear to compile as well.
 
 Other version combinations untested and some definitely do not work.
+
+## Windows
+
+Cwtch relies on sqlite which in turn requires the use of CGO. As per [this issue](https://github.com/golang/go/issues/12029) 
+that means [TDM-GCC](https://jmeubank.github.io/tdm-gcc/download/) is required to be installed and used to compile on Windows. 
+Install it and add it to your path and `make windows` should then work.
 
 ## Experimental iOS support
     make ios
@@ -43,4 +50,4 @@ written to `stdout` when `DebugInfo()` is called.
 
 ## MacOS
 
-- copy libCwtch.dylib into the directory you are executing from
+- copy libCwtch.x64.dylib and libCwtch.arm.dylib into the directory you are executing from
