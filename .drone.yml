@@ -184,8 +184,8 @@ steps:
       - chmod 400 ~/id_rsa
       - export DIR=libCwtch-go-macos-`cat BUILDDATE`-`cat VERSION`
       - mkdir $DIR
-      - mv libCwtch.dylib  $DIR/
-      - mv libCwtch.arm64.dylib $DIR/
+      - mv libCwtch.x64.dylib  $DIR/
+      - mv libCwtch.arm.dylib $DIR/
       - cd $DIR
       - find . -type f -exec shasum -a 512 {} \; > ./../sha512s.txt
       - mv ./../sha512s.txt .
