@@ -161,18 +161,15 @@ steps:
   - name: build-macos-x64
     commands:
       - export PATH=$PATH:/usr/local/go/bin/
-      - make macos
+      - make libCwtch.x64.dylib
   - name: build-macos-arm64
     when:
-      event:
-        - push
+      #event:
+      #  - push
       status: [ success ]
     commands:
       - export PATH=$PATH:/usr/local/go/bin/
-      - ./switch-ffi.sh
-      - export VERSION=$(cat VERSION)
-      - export BUILDDATE=$(cat BUILDDATE)
-      - env GOARCH=arm64 GOOS=darwin CGO_ENABLED=1 go build -ldflags "-X main.buildVer=$VERSION -X main.buildDate=$BUILDDATE" -buildmode c-shared -o libCwtch.arm64.dylib
+      - make libCwtch.arm.dylib
   - name: deploy-buildfiles
     environment:
       BUILDFILES_KEY:
