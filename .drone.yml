@@ -164,8 +164,8 @@ steps:
       - make libCwtch.x64.dylib
   - name: build-macos-arm64
     when:
-      #event:
-      #  - push
+      event:
+        - push
       status: [ success ]
     commands:
       - export PATH=$PATH:/usr/local/go/bin/
