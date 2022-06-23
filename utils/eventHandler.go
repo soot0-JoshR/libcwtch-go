@@ -373,8 +373,15 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			if ci != nil && ci.Accepted {
 				handleImagePreviews(profile, &ev.Event, conversationID, ci.ID)
 			}
+
 			gci, _ := profile.GetConversationInfo(conversationID)
-			ev.Event.Data["notification"] = string(determineNotification(gci))
+			state := profile.GetPeerState(gci.Handle)
+			// if syncing, don't flood with notifications
+			if state == connections.SYNCED {
+				ev.Event.Data["notification"] = string(determineNotification(gci))
+			} else {
+				ev.Event.Data["notification"] = string(constants2.NotificationNone)
+			}
 		case event.PeerAcknowledgement:
 			ci, err := profile.FetchConversationInfo(ev.Event.Data["RemotePeer"])
 			if ci != nil && err == nil {
