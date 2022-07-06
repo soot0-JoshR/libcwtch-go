@@ -32,4 +32,4 @@ const LocaleSetting = "locale"
 const ZoomSetting = "zoom"
 
 // App Experiments
-const  MessageFormattingExperiment = "message-formatting"
+const MessageFormattingExperiment = "message-formatting"

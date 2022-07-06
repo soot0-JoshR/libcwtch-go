@@ -12,11 +12,10 @@ import (
 	"cwtch.im/cwtch/protocol/files"
 	"encoding/json"
 	"fmt"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
 	"io/ioutil"
 	path "path/filepath"
 	"runtime/pprof"
-
-	"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
 
 	// Import SQL Cipher
 	"os/user"
@@ -415,6 +414,14 @@ func SendAppEvent(eventJson string) {
 			}
 		}
 
+		// File Sharing Experiment Refresh
+		_, err = filesharing.FunctionalityGate(settings.Experiments)
+		if err != nil {
+			for _, handle := range application.ListProfiles() {
+				application.GetPeer(handle).StopAllFileShares()
+			}
+		}
+
 		// Explicitly toggle blocking/unblocking of unknown connections for profiles
 		// that have been loaded.
 		if settings.BlockUnknownConnections {
@@ -691,6 +698,69 @@ func GetMessagesByContentHash(profileOnion string, handle int, contentHash strin
 	return string(bytes)
 }
 
+//export c_GetSharedFiles
+// the pointer returned from this function **must** be Freed  by c_Free
+func c_GetSharedFiles(profile_ptr *C.char, profile_len C.int, conversation_id C.int) *C.char {
+	profile := C.GoStringN(profile_ptr, profile_len)
+	return C.CString(GetSharedFiles(profile, int(conversation_id)))
+}
+
+func GetSharedFiles(profileOnion string, conversationID int) string {
+	if application != nil {
+		profile := application.GetPeer(profileOnion)
+		if profile != nil {
+			fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
+			if err != nil {
+				log.Errorf("file sharing error: %v", err)
+			} else {
+				data, err := json.Marshal(fh.GetSharedFiles(profile, conversationID))
+				if err == nil {
+					return string(data)
+				}
+				log.Errorf("error marshalling shared files..%v", err)
+			}
+		}
+	}
+	return ""
+}
+
+//export c_RestartSharing
+func c_RestartSharing(profile_ptr *C.char, profile_len C.int, filekey_ptr *C.char, filekey_ptr_len C.int) {
+	profile := C.GoStringN(profile_ptr, profile_len)
+	filekey := C.GoStringN(filekey_ptr, filekey_ptr_len)
+	RestartSharing(profile, filekey)
+}
+
+func RestartSharing(profileOnion string, filekey string) {
+	if application != nil {
+		profile := application.GetPeer(profileOnion)
+		if profile != nil {
+			fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
+			if err != nil {
+				log.Errorf("file sharing error: %v", err)
+			} else {
+				fh.RestartFileShare(profile, filekey)
+			}
+		}
+	}
+}
+
+//export c_StopSharing
+func c_StopSharing(profile_ptr *C.char, profile_len C.int, filekey_ptr *C.char, filekey_ptr_len C.int) {
+	profile := C.GoStringN(profile_ptr, profile_len)
+	filekey := C.GoStringN(filekey_ptr, filekey_ptr_len)
+	StopSharing(profile, filekey)
+}
+
+func StopSharing(profileOnion string, filekey string) {
+	if application != nil {
+		profile := application.GetPeer(profileOnion)
+		if profile != nil {
+			profile.StopFileShare(filekey)
+		}
+	}
+}
+
 //export c_GetMessages
 // the pointer returned from this function **must** be Freed  by c_Free
 func c_GetMessages(profile_ptr *C.char, profile_len C.int, conversation_id C.int, message_index C.int, count C.int) *C.char {
@@ -802,6 +872,8 @@ func ShareFile(profileOnion string, conversationID int, sharefilepath string) st
 				// there is only one, and it is the custom profile image...
 				profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.CustomProfileImageKey, fileKey)
 			} else {
+				// Set a new attribute so we can associate this download with this conversation...
+				profile.SetConversationAttribute(conversationID, attr.ConversationScope.ConstructScopedZonedPath(attr.FilesharingZone.ConstructZonedPath(fileKey)), "")
 				id, err := profile.SendMessage(conversationID, overlay)
 				if err == nil {
 					return GetMessageByID(profileOnion, conversationID, id)
@@ -873,7 +945,7 @@ func c_VerifyOrResumeDownload(profile_ptr *C.char, profile_len C.int, conversati
 func VerifyOrResumeDownload(profileOnion string, conversationID int, fileKey string) {
 	profile := application.GetPeer(profileOnion)
 	if profile != nil {
-		if manifestFilePath, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%v.manifest", fileKey)); exists {
+		if manifestFilePath, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.manifest", fileKey)); exists {
 			if downloadfilepath, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", fileKey)); exists {
 				log.Infof("resuming %s", fileKey)
 				DownloadFile(profileOnion, conversationID, downloadfilepath, manifestFilePath, fileKey)
@@ -881,7 +953,7 @@ func VerifyOrResumeDownload(profileOnion string, conversationID int, fileKey str
 				log.Errorf("found manifest path but not download path for %s", fileKey)
 			}
 		} else {
-			log.Errorf("no stored manifest path found for %s", fileKey)
+			log.Debugf("no stored manifest path found for %s", fileKey)
 		}
 	}
 }
