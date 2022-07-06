@@ -151,6 +151,12 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 
 			e.Data["Online"] = online
 
+			// If file sharing is enabled then reshare all active files...
+			fsf, err := filesharing.FunctionalityGate(settings.Experiments)
+			if err == nil {
+				fsf.ReShareFiles(profile)
+			}
+
 			// Construct our conversations and our srever lists
 			var contacts []Contact
 			var servers []groups.Server

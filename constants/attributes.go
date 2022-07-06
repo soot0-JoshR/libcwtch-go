@@ -30,3 +30,6 @@ const StateSelectedProfileTime = "state-selected-profile-time"
 const BlockUnknownPeersSetting = "blockunknownpeers"
 const LocaleSetting = "locale"
 const ZoomSetting = "zoom"
+
+// App Experiments
+const MessageFormattingExperiment = "message-formatting"
