@@ -415,10 +415,14 @@ func SendAppEvent(eventJson string) {
 		}
 
 		// File Sharing Experiment Refresh
-		_, err = filesharing.FunctionalityGate(settings.Experiments)
+		fs, err := filesharing.FunctionalityGate(settings.Experiments)
 		if err != nil {
 			for _, handle := range application.ListProfiles() {
 				application.GetPeer(handle).StopAllFileShares()
+			}
+		} else {
+			for _, handle := range application.ListProfiles() {
+				fs.ReShareFiles(application.GetPeer(handle))
 			}
 		}
 
@@ -953,7 +957,7 @@ func VerifyOrResumeDownload(profileOnion string, conversationID int, fileKey str
 				log.Errorf("found manifest path but not download path for %s", fileKey)
 			}
 		} else {
-			log.Debugf("no stored manifest path found for %s", fileKey)
+			log.Errorf("no stored manifest path found for %s", fileKey)
 		}
 	}
 }
