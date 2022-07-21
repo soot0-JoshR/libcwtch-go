@@ -21,4 +21,5 @@ type Contact struct {
 	IsArchived         bool                    `json:"isArchived"`
 	Identifier         int                     `json:"identifier"`
 	NotificationPolicy string                  `json:"notificationPolicy"`
+	Attributes         map[string]string       `json:"attributes"`
 }
