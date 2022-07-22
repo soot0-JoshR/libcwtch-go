@@ -282,6 +282,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						GroupServer:        groupServer,
 						IsArchived:         isArchived == event.True,
 						NotificationPolicy: notificationPolicy,
+						Attributes:         conversationInfo.Attributes,
 					})
 				}
 			}
