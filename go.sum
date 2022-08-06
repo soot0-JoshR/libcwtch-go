@@ -11,8 +11,6 @@ cloud.google.com/go/firestore v1.1.0/go.mod h1:ulACoGHTpvq5r8rxGJ4ddJZBZqakUQqCl
 cloud.google.com/go/pubsub v1.0.1/go.mod h1:R0Gpsv3s54REJCy4fxDixWD93lHJMoZTyQ2kNxGRt3I=
 cloud.google.com/go/storage v1.0.0/go.mod h1:IhtSnM/ZTZV8YYJWCY8RULGVqBDmpoyjwiyrjsg+URw=
 cwtch.im/cwtch v0.14.9/go.mod h1:/fLuoYLY/7JHw6RojFojpd245CiOcU24QpWqzh9FRDI=
-cwtch.im/cwtch v0.17.0 h1:yNTCi47E0p0vCBMNSRHe+TJ/D9oCn+b59DCyK3gT7lY=
-cwtch.im/cwtch v0.17.0/go.mod h1:Lxn88WAdGJotH3VECLL/uHIFnvf9RfX11YEeoZqmjcw=
 cwtch.im/cwtch v0.17.1 h1:6+llVGiy3/um1X9v6zndCQoYMDVRiz8pC46CPy9ahaE=
 cwtch.im/cwtch v0.17.1/go.mod h1:P1P559+8tW9hnFcGys4rmpOVm3E/DHd3C49Sb9P6KbE=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
@@ -26,7 +24,6 @@ git.openprivacy.ca/cwtch.im/tapir v0.5.4/go.mod h1:VJitTBzerc+WO53c5XY30P2JD2Nx9
 git.openprivacy.ca/openprivacy/bine v0.0.4 h1:CO7EkGyz+jegZ4ap8g5NWRuDHA/56KKvGySR6OBPW+c=
 git.openprivacy.ca/openprivacy/bine v0.0.4/go.mod h1:13ZqhKyqakDsN/ZkQkIGNULsmLyqtXc46XBcnuXm/mU=
 git.openprivacy.ca/openprivacy/connectivity v1.5.0/go.mod h1:UjQiGBnWbotmBzIw59B8H6efwDadjkKzm3RPT1UaIRw=
-git.openprivacy.ca/openprivacy/connectivity v1.8.3 h1:bWM8aQHqHIpobYQcLQ9OsNPoIl+H+4JFWbYGdG0nHlg=
 git.openprivacy.ca/openprivacy/connectivity v1.8.3/go.mod h1:UjQiGBnWbotmBzIw59B8H6efwDadjkKzm3RPT1UaIRw=
 git.openprivacy.ca/openprivacy/connectivity v1.8.4 h1:fQIOtvtCtZpB1D2XvmSJUdb8aqSKujPsqMHWXl52150=
 git.openprivacy.ca/openprivacy/connectivity v1.8.4/go.mod h1:pG50Dq4IelxFGyF1y8dU5kXrnsDGEnobbEFZlB9COLM=

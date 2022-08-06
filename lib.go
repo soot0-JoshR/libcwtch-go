@@ -973,6 +973,7 @@ func ResetTor() {
 
 	globalACN.Close() // we need to close first if dateDir is the same, otherwise buildACN can't launch tor.
 	globalACN.ReplaceACN(buildACN(*settings, globalTorPath, globalAppDir))
+	application.QueryACNVersion()
 
 	// We need to update settings on reset as buildACN can alter settings, otherwise the next reset will be broken...
 	settings = utils.ReadGlobalSettings()
