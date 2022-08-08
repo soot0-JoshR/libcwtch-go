@@ -382,7 +382,8 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			}
 
 			gci, _ := profile.GetConversationInfo(conversationID)
-			state := profile.GetPeerState(gci.Handle)
+			groupServer := gci.Attributes[attr.LocalScope.ConstructScopedZonedPath(attr.LegacyGroupZone.ConstructZonedPath(constants.GroupServer)).ToString()]
+			state := profile.GetPeerState(groupServer)
 			// if syncing, don't flood with notifications
 			if state == connections.SYNCED {
 				ev.Event.Data["notification"] = string(determineNotification(gci))
@@ -581,14 +582,10 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.IndexedFailure, q)
 	eventBus.Subscribe(event.ContactCreated, q)
 	eventBus.Subscribe(event.NewMessageFromGroup, q)
-	eventBus.Subscribe(event.MessageCounterResync, q)
 	eventBus.Subscribe(event.GroupCreated, q)
 	eventBus.Subscribe(event.NewGroup, q)
-	eventBus.Subscribe(event.DeleteGroup, q)
 	eventBus.Subscribe(event.ServerStateChange, q)
 	eventBus.Subscribe(event.PeerStateChange, q)
-	eventBus.Subscribe(event.ChangePasswordSuccess, q)
-	eventBus.Subscribe(event.ChangePasswordError, q)
 	eventBus.Subscribe(event.NewRetValMessageFromPeer, q)
 	eventBus.Subscribe(event.ShareManifest, q)
 	eventBus.Subscribe(event.ManifestSizeReceived, q)
