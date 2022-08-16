@@ -1053,15 +1053,15 @@ func DeleteContact(profileHandle string, conversationID int) {
 }
 
 //export c_ImportBundle
-func c_ImportBundle(profile_ptr *C.char, profile_len C.int, bundle_ptr *C.char, bundle_len C.int) {
+func c_ImportBundle(profile_ptr *C.char, profile_len C.int, bundle_ptr *C.char, bundle_len C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	name := C.GoStringN(bundle_ptr, bundle_len)
-	ImportBundle(profile, name)
+	return C.CString(ImportBundle(profile, name))
 }
 
 // ImportBundle takes in a handle to a profile and an invite string which could have one of many
 // different formats (e.g. a peer address, a group invite, a server key bundle, or a combination)
-func ImportBundle(profileOnion string, bundle string) {
+func ImportBundle(profileOnion string, bundle string) string {
 	profile := application.GetPeer(profileOnion)
 	if profile != nil {
 		response := profile.ImportBundle(bundle)
@@ -1074,8 +1074,9 @@ func ImportBundle(profileOnion string, bundle string) {
 			eventHandler.Push(event.NewEvent(groups.UpdateServerInfo, map[event.Field]string{"ProfileOnion": profileOnion, groups.ServerList: string(serversListBytes)}))
 		}
 
-		eventHandler.Push(event.NewEvent(event.AppError, map[event.Field]string{event.Data: response.Error()}))
+		return response.Error()
 	}
+	return "no-profile"
 }
 
 //export c_SetProfileAttribute
