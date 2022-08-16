@@ -27,6 +27,8 @@ git.openprivacy.ca/openprivacy/connectivity v1.5.0/go.mod h1:UjQiGBnWbotmBzIw59B
 git.openprivacy.ca/openprivacy/connectivity v1.8.3/go.mod h1:UjQiGBnWbotmBzIw59B8H6efwDadjkKzm3RPT1UaIRw=
 git.openprivacy.ca/openprivacy/connectivity v1.8.4 h1:fQIOtvtCtZpB1D2XvmSJUdb8aqSKujPsqMHWXl52150=
 git.openprivacy.ca/openprivacy/connectivity v1.8.4/go.mod h1:pG50Dq4IelxFGyF1y8dU5kXrnsDGEnobbEFZlB9COLM=
+git.openprivacy.ca/openprivacy/connectivity v1.8.5 h1:eAlpNyxMBVq/PK+5EkG3zpcCjRjxi6Sg+iVoamuX1co=
+git.openprivacy.ca/openprivacy/connectivity v1.8.5/go.mod h1:pG50Dq4IelxFGyF1y8dU5kXrnsDGEnobbEFZlB9COLM=
 git.openprivacy.ca/openprivacy/log v1.0.2/go.mod h1:gGYK8xHtndRLDymFtmjkG26GaMQNgyhioNS82m812Iw=
 git.openprivacy.ca/openprivacy/log v1.0.3 h1:E/PMm4LY+Q9s3aDpfySfEDq/vYQontlvNj/scrPaga0=
 git.openprivacy.ca/openprivacy/log v1.0.3/go.mod h1:gGYK8xHtndRLDymFtmjkG26GaMQNgyhioNS82m812Iw=
