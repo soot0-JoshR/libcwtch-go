@@ -80,16 +80,39 @@ func (eh *EventHandler) GetNextEvent() string {
 
 // handleAppBusEvent enriches AppBus events so they are usable with out further data fetches
 func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
+	acnStatus := -1
 	if eh.app != nil {
 		switch e.EventType {
 		case event.ACNStatus:
-			if e.Data[event.Progress] == "100" {
-				for _, onion := range eh.app.ListProfiles() {
-					// launch a listen thread (internally this does a check that the protocol engine is not listening)
-					// and as such is safe to call.
-					eh.app.GetPeer(onion).Listen()
+			newAcnStatus, err := strconv.Atoi(e.Data[event.Progress])
+			if err != nil {
+				break
+			}
+			if newAcnStatus == 100 {
+				if acnStatus != 100 {
+					// just came online
+					for _, onion := range eh.app.ListProfiles() {
+						eh.app.ActivePeerEngine(onion)
+						// launch a listen thread (internally this does a check that the protocol engine is not listening)
+						// and as such is safe to call.
+						profile := eh.app.GetPeer(onion)
+						profile.Listen()
+						profile.StartPeersConnections()
+						if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
+							profile.StartServerConnections()
+						}
+					}
+				}
+			} else {
+				if acnStatus == 100 {
+					// just fell offline
+					for _, onion := range eh.app.ListProfiles() {
+						eh.app.DeactivatePeerEngine(onion)
+					}
 				}
 			}
+			acnStatus = newAcnStatus
+
 		case event.NewPeer:
 			onion := e.Data[event.Identity]
 			profile := eh.app.GetPeer(e.Data[event.Identity])
@@ -126,10 +149,12 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			}
 
 			// Start up the Profile
-			profile.Listen()
-			profile.StartPeersConnections()
-			if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
-				profile.StartServerConnections()
+			if acnStatus == 100 {
+				profile.Listen()
+				profile.StartPeersConnections()
+				if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
+					profile.StartServerConnections()
+				}
 			}
 
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
