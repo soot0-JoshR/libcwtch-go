@@ -634,8 +634,26 @@ func getLastMessageTime(conversationMessages []model.ConversationMessage) int {
 func handleImagePreviews(profile peer.CwtchPeer, ev *event.Event, conversationID, senderID int) {
 	settings := ReadGlobalSettings()
 	fh, err := filesharing.PreviewFunctionalityGate(settings.Experiments)
+
+	// Short-circuit if file sharing is disabled
+	if err != nil {
+		return
+	}
+
+	// Short-circuit failures
+	// Don't autodownload images if the download path does not exist.
+	if settings.DownloadPath == "" {
+		return
+	}
+
+	// Don't autodownload images if the download path does not exist.
+	if _, err := os.Stat(settings.DownloadPath); os.IsNotExist(err) {
+		return
+	}
+
+	// Now look at the image preview experiment
 	imagePreviewsEnabled := settings.Experiments["filesharing-images"]
-	if err == nil && imagePreviewsEnabled {
+	if imagePreviewsEnabled {
 		var cm model.MessageWrapper
 		err := json.Unmarshal([]byte(ev.Data[event.Data]), &cm)
 		if err == nil && cm.Overlay == model.OverlayFileSharing {
