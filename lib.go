@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features"
-	"io/ioutil"
 	path "path/filepath"
 	"runtime/pprof"
 
@@ -84,11 +83,12 @@ func c_StartCwtch(dir_c *C.char, len C.int, tor_c *C.char, torLen C.int) C.int {
 }
 
 // StartCwtch starts cwtch in the library and initlaizes all data structures
-// 	 GetAppbusEvents is always safe to use
-//   the rest of functions are unsafe until the CwtchStarted event has been received indicating StartCwtch has completed
-//   returns:
-//     message: CwtchStarted when start up is complete and app is safe to use
-//              CwtchStartError message when start up fails (includes event.Error data field)
+//
+//		 GetAppbusEvents is always safe to use
+//	  the rest of functions are unsafe until the CwtchStarted event has been received indicating StartCwtch has completed
+//	  returns:
+//	    message: CwtchStarted when start up is complete and app is safe to use
+//	             CwtchStartError message when start up fails (includes event.Error data field)
 func StartCwtch(appDir string, torPath string) int {
 	if logfile := os.Getenv("LOG_FILE"); logfile != "" {
 		filelog, err := log.NewFile(log.LevelInfo, logfile)
@@ -272,7 +272,7 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 			}
 		}
 
-		if dataDir, err = ioutil.TempDir(torDir, "data-dir-"); err != nil {
+		if dataDir, err = os.MkdirTemp(torDir, "data-dir-"); err != nil {
 			eventHandler.Push(event.NewEventList(utils.CwtchStartError, event.Error, fmt.Sprintf("Error connecting to Tor: %v", err)))
 			return &connectivity.ErrorACN{}
 		}
@@ -362,8 +362,9 @@ func publishLoadedServers() {
 	}
 }
 
-//export c_SendAppEvent
 // A generic method for Rebroadcasting App Events from a UI
+//
+//export c_SendAppEvent
 func c_SendAppEvent(json_ptr *C.char, json_len C.int) {
 	eventJson := C.GoStringN(json_ptr, json_len)
 	SendAppEvent(eventJson)
@@ -458,8 +459,9 @@ func SendAppEvent(eventJson string) {
 	}
 }
 
-//export c_SendProfileEvent
 // A generic method for Rebroadcasting Profile Events from a UI
+//
+//export c_SendProfileEvent
 func c_SendProfileEvent(onion_ptr *C.char, onion_len C.int, json_ptr *C.char, json_len C.int) {
 	onion := C.GoStringN(onion_ptr, onion_len)
 	eventJson := C.GoStringN(json_ptr, json_len)
@@ -496,8 +498,9 @@ func SendProfileEvent(onion string, eventJson string) {
 	}
 }
 
-//export c_GetAppBusEvent
 // the pointer returned from this function **must** be freed using c_Free
+//
+//export c_GetAppBusEvent
 func c_GetAppBusEvent() *C.char {
 	return C.CString(GetAppBusEvent())
 }
@@ -576,8 +579,9 @@ func UnblockContact(profileOnion string, conversationID int) {
 	}
 }
 
-//export c_GetMessage
 // the pointer returned from this function **must** be Freed  by c_Free
+//
+//export c_GetMessage
 func c_GetMessage(profile_ptr *C.char, profile_len C.int, conversation_id C.int, message_index C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	return C.CString(GetMessage(profile, int(conversation_id), int(message_index)))
@@ -624,8 +628,9 @@ func GetMessage(profileOnion string, conversationID int, messageIndex int) strin
 	return string(bytes)
 }
 
-//export c_GetMessageByID
 // the pointer returned from this function **must** be Freed  by c_Free
+//
+//export c_GetMessageByID
 func c_GetMessageByID(profile_ptr *C.char, profile_len C.int, conversation_id C.int, message_index C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	return C.CString(GetMessageByID(profile, int(conversation_id), int(message_index)))
@@ -662,8 +667,9 @@ func GetMessageByID(profileOnion string, conversationID int, messageID int) stri
 	return string(bytes)
 }
 
-//export c_GetMessagesByContentHash
 // the pointer returned from this function **must** be freed by calling c_Free
+//
+//export c_GetMessagesByContentHash
 func c_GetMessagesByContentHash(profile_ptr *C.char, profile_len C.int, conversation_id C.int, contenthash_ptr *C.char, contenthash_len C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	contentHash := C.GoStringN(contenthash_ptr, contenthash_len)
@@ -702,8 +708,9 @@ func GetMessagesByContentHash(profileOnion string, handle int, contentHash strin
 	return string(bytes)
 }
 
-//export c_GetSharedFiles
 // the pointer returned from this function **must** be Freed  by c_Free
+//
+//export c_GetSharedFiles
 func c_GetSharedFiles(profile_ptr *C.char, profile_len C.int, conversation_id C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	return C.CString(GetSharedFiles(profile, int(conversation_id)))
@@ -765,8 +772,9 @@ func StopSharing(profileOnion string, filekey string) {
 	}
 }
 
-//export c_GetMessages
 // the pointer returned from this function **must** be Freed  by c_Free
+//
+//export c_GetMessages
 func c_GetMessages(profile_ptr *C.char, profile_len C.int, conversation_id C.int, message_index C.int, count C.int) *C.char {
 	profile := C.GoStringN(profile_ptr, profile_len)
 	return C.CString(GetMessages(profile, int(conversation_id), int(message_index), int(count)))
@@ -809,8 +817,9 @@ func GetMessages(profileOnion string, conversationID int, messageIndex int, coun
 	return string(bytes)
 }
 
-//export c_FreePointer
 // Dangerous function. Should only be used as documented in `MEMORY.md`
+//
+//export c_FreePointer
 func c_FreePointer(ptr *C.char) {
 	C.free(unsafe.Pointer(ptr))
 }

@@ -9,7 +9,6 @@ import (
 	"cwtch.im/cwtch/storage/v1"
 
 	"encoding/json"
-	"io/ioutil"
 	"os"
 
 	"git.openprivacy.ca/openprivacy/log"
@@ -89,7 +88,7 @@ func InitGlobalSettingsFile(directory string, password string) error {
 	lock.Lock()
 	defer lock.Unlock()
 	var key [32]byte
-	salt, err := ioutil.ReadFile(path.Join(directory, saltFile))
+	salt, err := os.ReadFile(path.Join(directory, saltFile))
 	if err != nil {
 		log.Infof("Could not find salt file: %v (creating a new settings file)", err)
 		var newSalt [128]byte
@@ -99,7 +98,7 @@ func InitGlobalSettingsFile(directory string, password string) error {
 			return err
 		}
 		os.Mkdir(directory, 0700)
-		err := ioutil.WriteFile(path.Join(directory, saltFile), newSalt[:], 0600)
+		err := os.WriteFile(path.Join(directory, saltFile), newSalt[:], 0600)
 		if err != nil {
 			log.Errorf("Could not write salt file: %v", err)
 			return err
