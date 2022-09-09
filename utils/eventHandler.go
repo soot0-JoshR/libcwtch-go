@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
 	"os"
 	"strconv"
 
@@ -15,7 +16,6 @@ import (
 	"cwtch.im/cwtch/protocol/connections"
 	constants2 "git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
-	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
 	"git.openprivacy.ca/openprivacy/log"
 
 	"time"
@@ -29,17 +29,23 @@ type EventProfileEnvelope struct {
 	Profile string
 }
 
+type LCG_API_Handler struct {
+	LaunchServers func()
+	StopServers   func()
+}
+
 type EventHandler struct {
 	app           app.Application
 	appBusQueue   event.Queue
 	profileEvents chan EventProfileEnvelope
+	api           LCG_API_Handler
 }
 
 // We should be reading from profile events pretty quickly, but we make this buffer fairly large...
 const profileEventsBufferSize = 512
 
-func NewEventHandler() *EventHandler {
-	eh := &EventHandler{app: nil, appBusQueue: event.NewQueue(), profileEvents: make(chan EventProfileEnvelope, profileEventsBufferSize)}
+func NewEventHandler(api LCG_API_Handler) *EventHandler {
+	eh := &EventHandler{app: nil, appBusQueue: event.NewQueue(), profileEvents: make(chan EventProfileEnvelope, profileEventsBufferSize), api: api}
 	return eh
 }
 
@@ -92,16 +98,15 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				if acnStatus != 100 {
 					// just came online
 					for _, onion := range eh.app.ListProfiles() {
-						eh.app.ActivePeerEngine(onion)
 						// launch a listen thread (internally this does a check that the protocol engine is not listening)
 						// and as such is safe to call.
-						profile := eh.app.GetPeer(onion)
-						profile.Listen()
-						profile.StartPeersConnections()
+						doServers := false
 						if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
-							profile.StartServerConnections()
+							doServers = true
 						}
+						eh.app.ActivePeerEngine(onion, true, true, doServers)
 					}
+					eh.api.LaunchServers()
 				}
 			} else {
 				if acnStatus == 100 {
@@ -109,6 +114,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					for _, onion := range eh.app.ListProfiles() {
 						eh.app.DeactivatePeerEngine(onion)
 					}
+					eh.api.StopServers()
 				}
 			}
 			acnStatus = newAcnStatus
@@ -150,11 +156,11 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 
 			// Start up the Profile
 			if acnStatus == 100 {
-				profile.Listen()
-				profile.StartPeersConnections()
+				doServers := false
 				if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
-					profile.StartServerConnections()
+					doServers = true
 				}
+				eh.app.ActivePeerEngine(onion, true, true, doServers)
 			}
 
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)

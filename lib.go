@@ -135,7 +135,8 @@ func _startCwtch(appDir string, torPath string) {
 	}
 
 	log.Infof("Creating new EventHandler()")
-	eventHandler = utils.NewEventHandler()
+	api := utils.LCG_API_Handler{LaunchServers: LaunchServers, StopServers: StopServers}
+	eventHandler = utils.NewEventHandler(api)
 
 	// Exclude Tapir wire Messages
 	//(We need a TRACE level)
@@ -195,8 +196,6 @@ func _startCwtch(appDir string, torPath string) {
 		serversHandler.Enable()
 	}
 	publishLoadedServers()
-	LaunchServers()
-
 	// FIXME: This code exists to allow the Splash Screen test in the new UI integration tests to pass
 	// it doesn't actually fix the problem in theory, and we should get around to ensuring that application
 	// is safe to access even if shutdown is called concurrently...
@@ -333,6 +332,7 @@ func ReconnectCwtchForeground() {
 
 		// Group Experiment Server Refresh
 		if groupHandler != nil {
+			profile.StartServerConnections()
 			serverListForOnion := groupHandler.GetServerInfoList(profile)
 			serversListBytes, _ := json.Marshal(serverListForOnion)
 			eventHandler.Push(event.NewEvent(groups.UpdateServerInfo, map[event.Field]string{"ProfileOnion": profileOnion, groups.ServerList: string(serversListBytes)}))
@@ -1299,15 +1299,17 @@ func LoadServers(password string) {
 			log.Errorf("Error attempting to load servers :%s\n", err)
 			application.GetPrimaryBus().Publish(event.NewEventList(servers.ZeroServersLoaded))
 		} else if len(serversList) == 0 {
+			log.Debugln("Loaded 0 servers")
 			application.GetPrimaryBus().Publish(event.NewEventList(servers.ZeroServersLoaded))
 		} else {
+			acnStatus, _ := globalACN.GetBootstrapStatus()
 			for _, serverOnion := range serversList {
 				serverInfo := serversHandler.GetServerInfo(serverOnion)
 				log.Debugf("Load Server NewServer event: %s", serverInfo)
 				ev := event.NewEvent(servers.NewServer, make(map[event.Field]string))
 				serverInfo.EnrichEvent(&ev)
 				application.GetPrimaryBus().Publish(ev)
-				if serverInfo.Autostart {
+				if serverInfo.Autostart && acnStatus == 100 {
 					LaunchServer(serverOnion)
 				}
 			}
@@ -1377,7 +1379,8 @@ func c_LaunchServers() {
 
 func LaunchServers() {
 	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
-	if err == nil {
+	acnStatus, _ := globalACN.GetBootstrapStatus()
+	if err == nil && acnStatus == 100 {
 		for _, onion := range serversHandler.ListServers() {
 			autostart := false
 			if s := serversHandler.GetServer(onion); s != nil {
