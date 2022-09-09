@@ -16,12 +16,12 @@ import (
 	path "path/filepath"
 	"runtime/pprof"
 
-	// Import SQL Cipher
 	"os/user"
 	"runtime"
 	"strings"
 	"unsafe"
 
+	// Import SQL Cipher
 	_ "github.com/mutecomm/go-sqlcipher/v4"
 
 	"cwtch.im/cwtch/app"
