@@ -585,6 +585,25 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 					}
 				}
 			}
+		case event.TokenManagerInfo:
+			conversations, err := profile.FetchConversations()
+			if err == nil {
+				var associatedGroups []int
+				for _, ci := range conversations {
+					groupServer, groupServerExists := ci.Attributes[attr.LocalScope.ConstructScopedZonedPath(attr.LegacyGroupZone.ConstructZonedPath(constants.GroupServer)).ToString()]
+					if groupServerExists {
+						gci, err := profile.FetchConversationInfo(groupServer)
+						if err == nil {
+							tokenOnion, onionExists := gci.Attributes[attr.PublicScope.ConstructScopedZonedPath(attr.ServerKeyZone.ConstructZonedPath(string(model.KeyTypeTokenOnion))).ToString()]
+							if onionExists && tokenOnion == ev.Event.Data[event.ServerTokenOnion] {
+								associatedGroups = append(associatedGroups, ci.ID)
+							}
+						}
+					}
+				}
+				associatedGroupsJson, _ := json.Marshal(associatedGroups)
+				ev.Event.Data[event.Data] = string(associatedGroupsJson)
+			}
 		}
 	}
 
@@ -625,6 +644,7 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.ManifestSaved, q)
 	eventBus.Subscribe(event.FileDownloadProgressUpdate, q)
 	eventBus.Subscribe(event.FileDownloaded, q)
+	eventBus.Subscribe(event.TokenManagerInfo, q)
 
 	go eh.forwardProfileMessages(onion, q)
 
@@ -644,8 +664,9 @@ func (eh *EventHandler) forwardProfileMessages(onion string, q event.Queue) {
 }
 
 // Push pushes an event onto the app event bus
-//   It is also a way for libCwtch-go to publish an event for consumption by a UI before a Cwtch app has been initialized
-//     use: to signal an error before a cwtch app could be created
+//
+//	It is also a way for libCwtch-go to publish an event for consumption by a UI before a Cwtch app has been initialized
+//	  use: to signal an error before a cwtch app could be created
 func (eh *EventHandler) Push(newEvent event.Event) {
 	eh.appBusQueue.Publish(newEvent)
 }
