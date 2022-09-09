@@ -17,7 +17,9 @@ steps:
       - git fetch --tags
       #- export GO111MODULE=on
       #- go mod vendor
-      - go get
+      - go mod download
+      # mobile is... special
+      # go get golang.org/x/mobile/bind
       # TODO: upgrade to go1.16, remove mod/vendor, add go install for 1.16
       - echo `git describe --tags` > VERSION
       - echo `date +%G-%m-%d-%H-%M` > BUILDDATE
@@ -41,7 +43,7 @@ steps:
       - make linux
 
   - name: build-android
-    image: openpriv/android-go-mobile:2021.03
+    image: openpriv/android-go-mobile:2022.09
     volumes:
       - name: deps
         path: /go
@@ -51,7 +53,7 @@ steps:
       - make android
 
   - name: build-windows
-    image: openpriv/mingw-go:2021.03
+    image: openpriv/mingw-go:2022.09
     environment:
       GOPATH: /go
     volumes:
@@ -103,17 +105,6 @@ steps:
       checksum:
         - sha256
         - sha512
-
-  - name: notify-email
-    image: drillster/drone-email
-    pull: if-not-exists
-    settings:
-      host: build.openprivacy.ca
-      port: 25
-      skip_verify: true
-      from: drone@openprivacy.ca
-    when:
-      status: [ failure ]
 
   - name: notify-gogs
     image: openpriv/drone-gogs

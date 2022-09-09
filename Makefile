@@ -28,7 +28,7 @@ libCwtch.arm64.dylib: lib.go
 
 cwtch.aar: lib.go
 	./switch-gomobile.sh
-	gomobile bind -target android -ldflags="-X cwtch.buildVer=$(shell git describe --tags) -X cwtch.buildDate=$(shell date +%G-%m-%d-%H-%M)"
+	gomobile bind -target android/arm,android/arm64,android/amd64 -ldflags="-X cwtch.buildVer=$(shell git describe --tags) -X cwtch.buildDate=$(shell date +%G-%m-%d-%H-%M)"
 
 libCwtch.dll: lib.go
 	./switch-ffi.sh
