@@ -84,9 +84,12 @@ func (eh *EventHandler) GetNextEvent() string {
 	}
 }
 
+// track acnStatus across events
+var acnStatus = -1
+
 // handleAppBusEvent enriches AppBus events so they are usable with out further data fetches
 func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
-	acnStatus := -1
+
 	if eh.app != nil {
 		switch e.EventType {
 		case event.ACNStatus:
