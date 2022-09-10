@@ -143,6 +143,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline, event.False)
 			eh.app.AddPeerPlugin(onion, plugins.CONNECTIONRETRY)
 			eh.app.AddPeerPlugin(onion, plugins.NETWORKCHECK)
+			eh.app.AddPeerPlugin(onion, plugins.ANTISPAM)
 
 			// If the user has chosen to block unknown profiles
 			// then explicitly configure the protocol engine to do so..
