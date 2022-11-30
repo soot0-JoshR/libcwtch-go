@@ -3,7 +3,7 @@ module git.openprivacy.ca/cwtch.im/libcwtch-go
 go 1.17
 
 require (
-	cwtch.im/cwtch v0.18.3
+	cwtch.im/cwtch v0.18.4
 	git.openprivacy.ca/cwtch.im/server v1.4.5
 	git.openprivacy.ca/openprivacy/connectivity v1.8.6
 	git.openprivacy.ca/openprivacy/log v1.0.3
@@ -12,7 +12,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.0.0 // indirect
-	git.openprivacy.ca/cwtch.im/tapir v0.5.5 // indirect
+	git.openprivacy.ca/cwtch.im/tapir v0.6.0 // indirect
 	git.openprivacy.ca/openprivacy/bine v0.0.4 // indirect
 	github.com/gtank/merlin v0.1.1 // indirect
 	github.com/gtank/ristretto255 v0.1.3-0.20210930101514-6bb39798585c // indirect
