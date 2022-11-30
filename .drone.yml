@@ -10,6 +10,7 @@ steps:
       - name: deps
         path: /go
     commands:
+      - go install honnef.co/go/tools/cmd/staticcheck@latest
       - wget https://git.openprivacy.ca/openprivacy/buildfiles/raw/master/tor/tor
       - wget https://git.openprivacy.ca/openprivacy/buildfiles/raw/master/tor/torrc
       - chmod a+x tor
@@ -30,8 +31,7 @@ steps:
       - name: deps
         path: /go
     commands:
-      - go list ./... | xargs go vet
-      - go list ./... | xargs golint 
+      - staticcheck ./...
         #Todo: fix all the lint errors and add `-set_exit_status` above to enforce linting
 
   - name: build-linux
