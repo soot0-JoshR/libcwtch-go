@@ -1,6 +1,8 @@
 cwtch.im/cwtch v0.18.0/go.mod h1:StheazFFY7PKqBbEyDVLhzWW6WOat41zV0ckC240c5Y=
 cwtch.im/cwtch v0.18.3 h1:3zBvC4buII6pWQ+OOVUR6WuAwQDKCxSrj0ZOYKEeB6I=
 cwtch.im/cwtch v0.18.3/go.mod h1:StheazFFY7PKqBbEyDVLhzWW6WOat41zV0ckC240c5Y=
+cwtch.im/cwtch v0.18.4 h1:Oht7rEDVJjVWDOKg0xqDgXvY/H059HMJlOPt/nBGqxk=
+cwtch.im/cwtch v0.18.4/go.mod h1:h8S7EgEM+8pE1k+XLB5jAFdIPlOzwoXEY0GH5mQye5A=
 filippo.io/edwards25519 v1.0.0-rc.1/go.mod h1:N1IkdkCkiLB6tki+MYJoSx2JTY9NUlxZE7eHn5EwJns=
 filippo.io/edwards25519 v1.0.0 h1:0wAIcmJUqRdI8IJ/3eGi5/HwXZWPujYXXlkrQogz0Ek=
 filippo.io/edwards25519 v1.0.0/go.mod h1:N1IkdkCkiLB6tki+MYJoSx2JTY9NUlxZE7eHn5EwJns=
@@ -8,6 +10,8 @@ git.openprivacy.ca/cwtch.im/server v1.4.5 h1:QuNAIxld+aWeQfWuGHB2QYZXsqJMmTyl55P
 git.openprivacy.ca/cwtch.im/server v1.4.5/go.mod h1:dGB1bePUgDU9xwk7gGkioNeshrbNgGWhSH8zMQwIAUg=
 git.openprivacy.ca/cwtch.im/tapir v0.5.5 h1:km6UDrLYH/GCEn2s+S299/TiRHhxKCIAipYr9GbG3Hk=
 git.openprivacy.ca/cwtch.im/tapir v0.5.5/go.mod h1:bWWHrDYBtHvxMri59RwIB/w7Eg1aC0BrQ/ycKlnbB5k=
+git.openprivacy.ca/cwtch.im/tapir v0.6.0 h1:TtnKjxitkIDMM7Qn0n/u+mOHRLJzuQUYjYRu5n0/QFY=
+git.openprivacy.ca/cwtch.im/tapir v0.6.0/go.mod h1:iQIq4y7N+DuP3CxyG66WNEC/d6vzh+wXvvOmelB+KoY=
 git.openprivacy.ca/openprivacy/bine v0.0.4 h1:CO7EkGyz+jegZ4ap8g5NWRuDHA/56KKvGySR6OBPW+c=
 git.openprivacy.ca/openprivacy/bine v0.0.4/go.mod h1:13ZqhKyqakDsN/ZkQkIGNULsmLyqtXc46XBcnuXm/mU=
 git.openprivacy.ca/openprivacy/connectivity v1.8.6 h1:g74PyDGvpMZ3+K0dXy3mlTJh+e0rcwNk0XF8owzkmOA=
@@ -95,7 +99,6 @@ golang.org/x/crypto v0.0.0-20220826181053-bd7e27e6170d/go.mod h1:IxCIyHEi3zRg3s0
 golang.org/x/exp v0.0.0-20190731235908-ec7cb31e5a56/go.mod h1:JhuoJpWY28nO4Vef9tZUw9qufEGTyX1+7lmHxV5q5G4=
 golang.org/x/image v0.0.0-20190227222117-0694c2d4d067/go.mod h1:kZ7UVZpmo3dzQBMxlp+ypCbDeSB+sBbTgSJuh5dn5js=
 golang.org/x/image v0.0.0-20190802002840-cff245a6509b/go.mod h1:FeLwcggjj3mMvU+oOTbSwawSJRM1uh48EjtB4UJZlP0=
-golang.org/x/mobile v0.0.0-20210220033013-bdb1ca9a1e08 h1:h+GZ3ubjuWaQjGe8owMGcmMVCqs0xYJtRG5y2bpHaqU=
 golang.org/x/mobile v0.0.0-20190312151609-d3739f865fa6/go.mod h1:z+o9i4GpDbdi3rU15maQ/Ox0txvL9dWGYEHz965HBQE=
 golang.org/x/mobile v0.0.0-20210220033013-bdb1ca9a1e08 h1:h+GZ3ubjuWaQjGe8owMGcmMVCqs0xYJtRG5y2bpHaqU=
 golang.org/x/mobile v0.0.0-20210220033013-bdb1ca9a1e08/go.mod h1:skQtrUTUwhdJvXM/2KKJzY8pDgNr9I/FOMqDVRPBUS4=

@@ -5,11 +5,12 @@ name: linux-android-windows-test
 
 steps:
   - name: fetch
-    image: golang:1.17.5
+    image: golang:1.19.1
     volumes:
       - name: deps
         path: /go
     commands:
+      - go install honnef.co/go/tools/cmd/staticcheck@latest
       - wget https://git.openprivacy.ca/openprivacy/buildfiles/raw/master/tor/tor
       - wget https://git.openprivacy.ca/openprivacy/buildfiles/raw/master/tor/torrc
       - chmod a+x tor
@@ -25,17 +26,16 @@ steps:
       - echo `date +%G-%m-%d-%H-%M` > BUILDDATE
 
   - name: quality
-    image: golang:1.17.5
+    image: golang:1.19.1
     volumes:
       - name: deps
         path: /go
     commands:
-      - go list ./... | xargs go vet
-      - go list ./... | xargs golint 
+      - staticcheck ./...
         #Todo: fix all the lint errors and add `-set_exit_status` above to enforce linting
 
   - name: build-linux
-    image: golang:1.17.5
+    image: golang:1.19.1
     volumes:
       - name: deps
         path: /go
@@ -43,7 +43,7 @@ steps:
       - make linux
 
   - name: build-android
-    image: openpriv/android-go-mobile:2022.09
+    image: openpriv/android-go-mobile:2022.11
     volumes:
       - name: deps
         path: /go
@@ -53,7 +53,7 @@ steps:
       - make android
 
   - name: build-windows
-    image: openpriv/mingw-go:2022.09
+    image: openpriv/mingw-go:2022.11
     environment:
       GOPATH: /go
     volumes:
