@@ -238,6 +238,7 @@ func buildACN(settings utils.GlobalSettings, torPath string, appDir string) conn
 	}
 
 	torrc := tor.NewTorrc().WithSocksPort(socksPort).WithOnionTrafficOnly().WithControlPort(controlPort).WithHashedPassword(base64.StdEncoding.EncodeToString(key))
+	// torrc.WithLog(path.Join(appDir, "tor", "tor.log"), tor.TorLogLevelNotice)
 	if settings.UseCustomTorrc {
 		customTorrc := settings.CustomTorrc
 		torrc.WithCustom(strings.Split(customTorrc, "\n"))
