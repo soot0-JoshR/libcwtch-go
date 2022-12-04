@@ -100,15 +100,11 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			if newAcnStatus == 100 {
 				if acnStatus != 100 {
 					// just came online
-					for _, onion := range eh.app.ListProfiles() {
-						// launch a listen thread (internally this does a check that the protocol engine is not listening)
-						// and as such is safe to call.
-						doServers := false
-						if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
-							doServers = true
-						}
-						eh.app.ActivePeerEngine(onion, true, true, doServers)
+					doServers := false
+					if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
+						doServers = true
 					}
+					eh.app.ActivateEngines(true, true, doServers)
 					eh.api.LaunchServers()
 				}
 			} else {
@@ -144,8 +140,8 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			}
 
 			profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline, event.False)
-			eh.app.AddPeerPlugin(onion, plugins.CONNECTIONRETRY)
-			eh.app.AddPeerPlugin(onion, plugins.NETWORKCHECK)
+			// disabeling network check for connection attempt reservation, needs rework
+			//eh.app.AddPeerPlugin(onion, plugins.NETWORKCHECK)
 			eh.app.AddPeerPlugin(onion, plugins.ANTISPAM)
 
 			// If the user has chosen to block unknown profiles
@@ -164,7 +160,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
 					doServers = true
 				}
-				eh.app.ActivePeerEngine(onion, true, true, doServers)
+				eh.app.ActivatePeerEngine(onion, true, true, doServers)
 			}
 
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
