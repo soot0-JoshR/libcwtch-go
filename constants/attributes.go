@@ -16,6 +16,8 @@ const ProfileTypeV1Password = "v1-userPassword"
 // PeerOnline stores state on if the peer believes it is online
 const PeerOnline = "peer-online"
 
+const PeerAutostart = "autostart"
+
 // Description is used on server contacts,
 const Description = "description"
 

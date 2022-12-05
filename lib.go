@@ -520,6 +520,28 @@ func GetAppBusEvent() string {
 	return json
 }
 
+//export c_ActivatePeerEngine
+func c_ActivatePeerEngine(onion_ptr *C.char, onion_len C.int) {
+	ActivatePeerEngine(C.GoStringN(onion_ptr, onion_len))
+}
+
+func ActivatePeerEngine(profile string) {
+	doServers := false
+	if _, err := groups.ExperimentGate(utils.ReadGlobalSettings().Experiments); err == nil {
+		doServers = true
+	}
+	application.ActivatePeerEngine(profile, true, true, doServers)
+}
+
+//export c_DeactivatePeerEngine
+func c_DeactivatePeerEngine(onion_ptr *C.char, onion_len C.int) {
+	DeactivatePeerEngine(C.GoStringN(onion_ptr, onion_len))
+}
+
+func DeactivatePeerEngine(profile string) {
+	application.DeactivatePeerEngine(profile)
+}
+
 //export c_CreateProfile
 func c_CreateProfile(nick_ptr *C.char, nick_len C.int, pass_ptr *C.char, pass_len C.int) {
 	CreateProfile(C.GoStringN(nick_ptr, nick_len), C.GoStringN(pass_ptr, pass_len))
