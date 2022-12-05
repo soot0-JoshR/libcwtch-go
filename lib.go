@@ -1133,6 +1133,8 @@ func SetProfileAttribute(profileOnion string, key string, value string) {
 		// All other scopes and zones need to be added explicitly or handled by Cwtch.
 		if zone == attr.ProfileZone && key == constants.Name {
 			profile.SetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name, value)
+		} else if zone == attr.ProfileZone && key == constants.PeerAutostart {
+			profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.PeerAutostart, value)
 		} else {
 			log.Errorf("attempted to set an attribute with an unknown zone: %v", key)
 		}
