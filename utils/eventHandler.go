@@ -104,7 +104,14 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 					if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
 						doServers = true
 					}
-					eh.app.ActivateEngines(true, true, doServers)
+
+					for _, onion := range eh.app.ListProfiles() {
+						profile := eh.app.GetPeer(onion)
+						autostart, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerAutostart)
+						if !exists || autostart == "true" {
+							eh.app.ActivatePeerEngine(onion, true, true, doServers)
+						}
+					}
 					eh.api.LaunchServers()
 				}
 			} else {
@@ -156,14 +163,26 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 
 			// Start up the Profile
 			if acnStatus == 100 {
-				doServers := false
-				if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
-					doServers = true
+				autostart, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerAutostart)
+				if !exists || autostart == "true" {
+					doServers := false
+					if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
+						doServers = true
+					}
+					eh.app.ActivatePeerEngine(onion, true, true, doServers)
 				}
-				eh.app.ActivatePeerEngine(onion, true, true, doServers)
 			}
 
 			online, _ := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerOnline)
+			e.Data["Online"] = online
+
+			autostart, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerAutostart)
+			// legacy profiles should autostart by default
+			if !exists {
+				autostart = "true"
+			}
+			e.Data["autostart"] = autostart
+
 			// Name always exists
 			e.Data[constants.Name], _ = profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name)
 			e.Data[constants2.DefaultProfilePicture] = RandomProfileImage(onion)
@@ -182,8 +201,6 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			}
 
 			// Resolve the profile image of the profile.
-
-			e.Data["Online"] = online
 
 			// If file sharing is enabled then reshare all active files...
 			fsf, err := filesharing.FunctionalityGate(settings.Experiments)
