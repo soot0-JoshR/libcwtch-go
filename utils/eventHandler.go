@@ -119,7 +119,6 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 								// reset the share timestamp, currently file shares are hardcoded to expire after 30 days...
 								// we reset the profile image here so that it is always available.
 								profile.SetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.ts", key), strconv.FormatInt(time.Now().Unix(), 10))
-								profile.ShareFile(key, serializedManifest)
 								log.Debugf("Custom Profile Image: %v %s", e.Data[constants2.Picture], key, serializedManifest)
 							}
 							// If file sharing is enabled then reshare all active files...
