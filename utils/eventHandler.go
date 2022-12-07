@@ -99,6 +99,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			}
 			if newAcnStatus == 100 {
 				if acnStatus != 100 {
+					settings := ReadGlobalSettings()
 					// just came online
 					doServers := false
 					if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
@@ -110,6 +111,23 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						autostart, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerAutostart)
 						if !exists || autostart == "true" {
 							eh.app.ActivatePeerEngine(onion, true, true, doServers)
+
+							// Now that the Peer Engine is Activated, Share Files
+							key, exists := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.CustomProfileImageKey)
+							if exists {
+								serializedManifest, _ := profile.GetScopedZonedAttribute(attr.ConversationScope, attr.FilesharingZone, fmt.Sprintf("%s.manifest", key))
+								// reset the share timestamp, currently file shares are hardcoded to expire after 30 days...
+								// we reset the profile image here so that it is always available.
+								profile.SetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.ts", key), strconv.FormatInt(time.Now().Unix(), 10))
+								profile.ShareFile(key, serializedManifest)
+								log.Debugf("Custom Profile Image: %v %s", e.Data[constants2.Picture], key, serializedManifest)
+							}
+							// If file sharing is enabled then reshare all active files...
+							fsf, err := filesharing.FunctionalityGate(settings.Experiments)
+							if err == nil {
+								fsf.ReShareFiles(profile)
+							}
+
 						}
 					}
 					eh.api.LaunchServers()
@@ -192,22 +210,7 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				e.Data[constants2.Picture] = RandomProfileImage(onion)
 			} else {
 				e.Data[constants2.Picture], _ = profile.GetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.path", key))
-				serializedManifest, _ := profile.GetScopedZonedAttribute(attr.ConversationScope, attr.FilesharingZone, fmt.Sprintf("%s.manifest", key))
-				// reset the share timestamp, currently file shares are hardcoded to expire after 30 days...
-				// we reset the profile image here so that it is always available.
-				profile.SetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.ts", key), strconv.FormatInt(time.Now().Unix(), 10))
-				profile.ShareFile(key, serializedManifest)
-				log.Debugf("Custom Profile Image: %v %s", e.Data[constants2.Picture], serializedManifest)
 			}
-
-			// Resolve the profile image of the profile.
-
-			// If file sharing is enabled then reshare all active files...
-			fsf, err := filesharing.FunctionalityGate(settings.Experiments)
-			if err == nil {
-				fsf.ReShareFiles(profile)
-			}
-
 			// Construct our conversations and our srever lists
 			var contacts []Contact
 			var servers []groups.Server
