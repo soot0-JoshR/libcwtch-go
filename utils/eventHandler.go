@@ -99,7 +99,6 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 			}
 			if newAcnStatus == 100 {
 				if acnStatus != 100 {
-					settings := ReadGlobalSettings()
 					// just came online
 					doServers := false
 					if _, err := groups.ExperimentGate(ReadGlobalSettings().Experiments); err == nil {
@@ -111,22 +110,6 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 						autostart, exists := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants2.PeerAutostart)
 						if !exists || autostart == "true" {
 							eh.app.ActivatePeerEngine(onion, true, true, doServers)
-
-							// Now that the Peer Engine is Activated, Share Files
-							key, exists := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.CustomProfileImageKey)
-							if exists {
-								serializedManifest, _ := profile.GetScopedZonedAttribute(attr.ConversationScope, attr.FilesharingZone, fmt.Sprintf("%s.manifest", key))
-								// reset the share timestamp, currently file shares are hardcoded to expire after 30 days...
-								// we reset the profile image here so that it is always available.
-								profile.SetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.ts", key), strconv.FormatInt(time.Now().Unix(), 10))
-								log.Debugf("Custom Profile Image: %v %s", e.Data[constants2.Picture], key, serializedManifest)
-							}
-							// If file sharing is enabled then reshare all active files...
-							fsf, err := filesharing.FunctionalityGate(settings.Experiments)
-							if err == nil {
-								fsf.ReShareFiles(profile)
-							}
-
 						}
 					}
 					eh.api.LaunchServers()
@@ -141,7 +124,6 @@ func (eh *EventHandler) handleAppBusEvent(e *event.Event) string {
 				}
 			}
 			acnStatus = newAcnStatus
-
 		case event.NewPeer:
 			onion := e.Data[event.Identity]
 			profile := eh.app.GetPeer(e.Data[event.Identity])
@@ -626,6 +608,23 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 				associatedGroupsJson, _ := json.Marshal(associatedGroups)
 				ev.Event.Data[event.Data] = string(associatedGroupsJson)
 			}
+		case event.ProtocolEngineCreated:
+			// TODO this code should be moved into Cwtch during the API officialization...
+			settings := ReadGlobalSettings()
+			// Now that the Peer Engine is Activated, Share Files
+			key, exists := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.CustomProfileImageKey)
+			if exists {
+				serializedManifest, _ := profile.GetScopedZonedAttribute(attr.ConversationScope, attr.FilesharingZone, fmt.Sprintf("%s.manifest", key))
+				// reset the share timestamp, currently file shares are hardcoded to expire after 30 days...
+				// we reset the profile image here so that it is always available.
+				profile.SetScopedZonedAttribute(attr.LocalScope, attr.FilesharingZone, fmt.Sprintf("%s.ts", key), strconv.FormatInt(time.Now().Unix(), 10))
+				log.Debugf("Custom Profile Image: %v %s", key, serializedManifest)
+			}
+			// If file sharing is enabled then reshare all active files...
+			fsf, err := filesharing.FunctionalityGate(settings.Experiments)
+			if err == nil {
+				fsf.ReShareFiles(profile)
+			}
 		}
 	}
 
@@ -667,7 +666,7 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.FileDownloadProgressUpdate, q)
 	eventBus.Subscribe(event.FileDownloaded, q)
 	eventBus.Subscribe(event.TokenManagerInfo, q)
-
+	eventBus.Subscribe(event.ProtocolEngineCreated, q)
 	go eh.forwardProfileMessages(onion, q)
 
 }
