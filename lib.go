@@ -543,16 +543,24 @@ func DeactivatePeerEngine(profile string) {
 }
 
 //export c_CreateProfile
-func c_CreateProfile(nick_ptr *C.char, nick_len C.int, pass_ptr *C.char, pass_len C.int) {
-	CreateProfile(C.GoStringN(nick_ptr, nick_len), C.GoStringN(pass_ptr, pass_len))
+func c_CreateProfile(nick_ptr *C.char, nick_len C.int, pass_ptr *C.char, pass_len C.int, autostart C.char) {
+	CreateProfile(C.GoStringN(nick_ptr, nick_len), C.GoStringN(pass_ptr, pass_len), autostart == 1)
 }
 
-func CreateProfile(nick, pass string) {
-	if pass == constants.DefactoPasswordForUnencryptedProfiles {
-		application.CreateTaggedPeer(nick, pass, constants.ProfileTypeV1DefaultPassword)
-	} else {
-		application.CreateTaggedPeer(nick, pass, constants.ProfileTypeV1Password)
+func CreateProfile(nick, pass string, autostart bool) {
+	autostartVal := constants2.True
+	if !autostart {
+		autostartVal = constants2.False
 	}
+	tagVal := constants.ProfileTypeV1Password
+	if pass == constants.DefactoPasswordForUnencryptedProfiles {
+		tagVal = constants.ProfileTypeV1DefaultPassword
+	}
+
+	application.CreatePeer(nick, pass, map[attr.ZonedPath]string{
+		attr.ProfileZone.ConstructZonedPath(constants2.Tag):          tagVal,
+		attr.ProfileZone.ConstructZonedPath(constants.PeerAutostart): autostartVal,
+	})
 }
 
 //export c_LoadProfiles
