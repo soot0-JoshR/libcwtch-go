@@ -945,7 +945,8 @@ func DownloadFile(profileOnion string, conversationID int, filepath, manifestpat
 			log.Errorf("file sharing error: %v", err)
 		} else {
 			// default to max 10 GB limit...
-			fh.DownloadFile(profile, conversationID, filepath, manifestpath, filekey, files.MaxManifestSize*files.DefaultChunkSize)
+			err := fh.DownloadFile(profile, conversationID, filepath, manifestpath, filekey, files.MaxManifestSize*files.DefaultChunkSize)
+			log.Errorf("file sharing error: %v", err)
 		}
 	}
 }
