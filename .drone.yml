@@ -14,7 +14,6 @@ steps:
       - wget https://git.openprivacy.ca/openprivacy/buildfiles/raw/master/tor/tor
       - wget https://git.openprivacy.ca/openprivacy/buildfiles/raw/master/tor/torrc
       - chmod a+x tor
-      - go get -u golang.org/x/lint/golint
       - git fetch --tags
       #- export GO111MODULE=on
       #- go mod vendor
