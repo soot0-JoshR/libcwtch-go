@@ -16,7 +16,7 @@ windows: libCwtch.dll
 
 libCwtch.so: lib.go 
 	./switch-ffi.sh
-	go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell date +%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.so
+	go build -ldflags "-buildid=$(shell git describe --tags) -X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell date +%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.so
 
 libCwtch.x64.dylib: lib.go
 	./switch-ffi.sh
