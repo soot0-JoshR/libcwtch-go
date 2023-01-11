@@ -16,23 +16,23 @@ windows: libCwtch.dll
 
 libCwtch.so: lib.go 
 	./switch-ffi.sh
-	go build -ldflags "-buildid=$(shell git describe --tags) -X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell date +%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.so
+	go build -ldflags "-buildid=$(shell git describe --tags) -X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.so
 
 libCwtch.x64.dylib: lib.go
 	./switch-ffi.sh
-	go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell date +%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.x64.dylib
+	go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.x64.dylib
 
 libCwtch.arm64.dylib: lib.go
 	./switch-ffi.sh
-	env GOARCH=arm64 GOOS=darwin CGO_ENABLED=1 go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell date +%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.arm64.dylib
+	env GOARCH=arm64 GOOS=darwin CGO_ENABLED=1 go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.arm64.dylib
 
 cwtch.aar: lib.go
 	./switch-gomobile.sh
-	gomobile bind -target android/arm,android/arm64,android/amd64 -ldflags="-X cwtch.buildVer=$(shell git describe --tags) -X cwtch.buildDate=$(shell date +%G-%m-%d-%H-%M)"
+	gomobile bind -target android/arm,android/arm64,android/amd64 -ldflags="-X cwtch.buildVer=$(shell git describe --tags) -X cwtch.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)"
 
 libCwtch.dll: lib.go
 	./switch-ffi.sh
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc-win32 go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell date +%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.dll
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc-win32 go build -ldflags "-X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.dll
 
 clean: 
 	rm -f cwtch.aar cwtch_go.apk libCwtch.h libCwtch.so cwtch-sources.jar libCwtch.dll libCwtch.dylib
