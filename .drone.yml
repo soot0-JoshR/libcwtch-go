@@ -52,7 +52,7 @@ steps:
       - make android
 
   - name: build-windows
-    image: openpriv/mingw-go:2022.11
+    image: openpriv/mingw-go:2023.01
     environment:
       GOPATH: /go
     volumes:
