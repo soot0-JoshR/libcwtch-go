@@ -16,19 +16,19 @@ windows: libCwtch.dll
 
 libCwtch.so: lib.go 
 	./switch-ffi.sh
-	go build -ldflags "-buildid=$(shell git describe --tags) -X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.so
+	go build -trimpath -ldflags "-buildid=$(shell git describe --tags) -X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.so
 
 libCwtch.x64.dylib: lib.go
 	./switch-ffi.sh
-	go build -ldflags "-buildid=$(shell git describe --tags) -X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.x64.dylib
+	go build -trimpath -ldflags "-buildid=$(shell git describe --tags) -X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.x64.dylib
 
 libCwtch.arm64.dylib: lib.go
 	./switch-ffi.sh
-	env GOARCH=arm64 GOOS=darwin CGO_ENABLED=1 go build -ldflags "-buildid=$(shell git describe --tags)  -X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.arm64.dylib
+	env GOARCH=arm64 GOOS=darwin CGO_ENABLED=1 go build -trimpath -ldflags "-buildid=$(shell git describe --tags)  -X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)" -buildmode c-shared -o libCwtch.arm64.dylib
 
 cwtch.aar: lib.go
 	./switch-gomobile.sh
-	gomobile bind -target android/arm,android/arm64,android/amd64 -ldflags="-buildid=$(shell git describe --tags) -X cwtch.buildVer=$(shell git describe --tags) -X cwtch.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)"
+	gomobile bind -trimpath -target android/arm,android/arm64,android/amd64 -ldflags="-buildid=$(shell git describe --tags) -X cwtch.buildVer=$(shell git describe --tags) -X cwtch.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M)"
 
 libCwtch.dll: lib.go
 	./switch-ffi.sh
@@ -36,7 +36,7 @@ libCwtch.dll: lib.go
 	# this is necessary for reproducible builds (see: https://wiki.debian.org/ReproducibleBuilds/TimestampsInPEBinaries for additional information)
 	# note: the above documentation also references an ability to set an optional timestamp - this behaviour seems to no longer be supported in more recent versions of mingw32-gcc (the help docs no longer reference that functionality)
 	# these flags have to be passed through to the underlying gcc process using the -extldflags option in the underlying go linker, note that the whole flag is quoted...this is necessary.
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc-win32 go build -ldflags "-buildid=$(shell git describe --tags)  -X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M) '-extldflags=-Xlinker --no-insert-timestamp'" -buildmode c-shared -o libCwtch.dll
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc-win32 go build -trimpath -ldflags "-buildid=$(shell git describe --tags)  -X main.buildVer=$(shell git describe --tags) -X main.buildDate=$(shell git log -1 --format=%cd --date=format:%G-%m-%d-%H-%M) '-extldflags=-Xlinker --no-insert-timestamp'" -buildmode c-shared -o libCwtch.dll
 
 clean: 
 	rm -f cwtch.aar cwtch_go.apk libCwtch.h libCwtch.so cwtch-sources.jar libCwtch.dll libCwtch.dylib
