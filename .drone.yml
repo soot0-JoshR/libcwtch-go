@@ -42,7 +42,7 @@ steps:
       - make linux
 
   - name: build-android
-    image: openpriv/android-go-mobile:2022.11
+    image: openpriv/android-go-mobile:2023.01
     volumes:
       - name: deps
         path: /go
