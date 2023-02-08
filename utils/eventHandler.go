@@ -611,6 +611,14 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 		case event.ProtocolEngineCreated:
 			// TODO this code should be moved into Cwtch during the API officialization...
 			settings := ReadGlobalSettings()
+
+			// ensure that protocol engine respects blocking settings...
+			if settings.BlockUnknownConnections {
+				profile.BlockUnknownConnections()
+			} else {
+				profile.AllowUnknownConnections()
+			}
+
 			// Now that the Peer Engine is Activated, Share Files
 			key, exists := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.CustomProfileImageKey)
 			if exists {
