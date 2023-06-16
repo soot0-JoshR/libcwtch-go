@@ -1,4 +1,4 @@
-# NOTE: libcwtch-go has been deprecated in favour of [autobindings](https://git.openprivacy.ca/cwtch.im/autobindings). This repository has been archived and is now longer maintained.
+# NOTE: libcwtch-go has been deprecated in favour of [autobindings](https://git.openprivacy.ca/cwtch.im/autobindings). This repository has been archived and is no longer maintained.
 
 # libcwtch-go
 
