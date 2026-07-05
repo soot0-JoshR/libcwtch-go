@@ -1,27 +1,53 @@
 package cwtch
 
 import (
+	"cwtch.im/cwtch/app"
+	lcgconstants "git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/cwtchcore"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/utils"
-	lcgconstants "git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/openprivacy/connectivity"
 	"git.openprivacy.ca/openprivacy/connectivity/tor"
 	"git.openprivacy.ca/openprivacy/log"
-	"cwtch.im/cwtch/app"
-	
+
 	"crypto/rand"
 	"encoding/base64"
+	mrand "math/rand"
 	"os"
 	"path/filepath"
-	"time"
-	mrand "math/rand"
+	"runtime"
 	"strings"
+	"time"
 )
 
 // StartCwtch initializes the Cwtch application instance for Android and assigns it to cwtchcore.
 func StartCwtch(appDir string, torPath string) int32 {
 	if cwtchcore.Application != nil {
 		return 0
+	}
+	if runtime.GOARCH != "arm64" {
+		log.Errorf("unsupported Android Cwtch architecture: %s", runtime.GOARCH)
+		return 2
+	}
+	if appDir == "" || torPath == "" {
+		log.Errorf("Cwtch startup requires app and Tor paths")
+		return 3
+	}
+	if info, err := os.Stat(torPath); err != nil || info.IsDir() {
+		log.Errorf("invalid bundled Tor path %q: %v", torPath, err)
+		return 4
+	}
+	if err := os.MkdirAll(appDir, 0700); err != nil {
+		log.Errorf("failed to create Cwtch directory: %v", err)
+		return 5
+	}
+	torDataDir := filepath.Join(appDir, "tor")
+	if err := os.MkdirAll(torDataDir, 0700); err != nil {
+		log.Errorf("failed to create Tor data directory: %v", err)
+		return 6
+	}
+	if err := utils.InitGlobalSettingsFile(appDir, lcgconstants.DefactoPasswordForUnencryptedProfiles); err != nil {
+		log.Errorf("failed to initialize Cwtch settings: %v", err)
+		return 7
 	}
 
 	api := utils.LCG_API_Handler{
@@ -31,10 +57,6 @@ func StartCwtch(appDir string, torPath string) int32 {
 	cwtchcore.EventHandler = utils.NewEventHandler(api)
 	log.ExcludeFromPattern("service.go")
 
-	os.MkdirAll(appDir, 0700)
-	utils.InitGlobalSettingsFile(appDir, lcgconstants.DefactoPasswordForUnencryptedProfiles)
-	os.MkdirAll(filepath.Join(appDir, "tor"), 0700)
-
 	settings := utils.ReadGlobalSettings()
 	cwtchcore.GlobalAppDir = appDir
 	cwtchcore.GlobalTorPath = torPath
@@ -43,7 +65,10 @@ func StartCwtch(appDir string, torPath string) int32 {
 	socksPort := mrand.Intn(1000) + 9600
 	controlPort := socksPort + 1
 	key := make([]byte, 64)
-	rand.Read(key)
+	if _, err := rand.Read(key); err != nil {
+		log.Errorf("failed to generate Tor authentication key: %v", err)
+		return 8
+	}
 
 	if settings.AllowAdvancedTorConfig {
 		controlPort = settings.CustomControlPort
@@ -51,7 +76,7 @@ func StartCwtch(appDir string, torPath string) int32 {
 	}
 
 	torrc := tor.NewTorrc().WithSocksPort(socksPort).WithOnionTrafficOnly().WithControlPort(controlPort).WithHashedPassword(base64.StdEncoding.EncodeToString(key))
-	
+
 	if settings.UseCustomTorrc {
 		customTorrc := settings.CustomTorrc
 		torrc.WithCustom(strings.Split(customTorrc, "\n"))
@@ -62,8 +87,18 @@ func StartCwtch(appDir string, torPath string) int32 {
 		utils.WriteGlobalSettings(*settings)
 	}
 
-	torrc.Build(filepath.Join(appDir, "tor", "torrc"))
-	acn, _ := tor.NewTorACNWithAuth(appDir, cwtchcore.GlobalTorPath, filepath.Join(appDir, "tor"), controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
+	if err := torrc.Build(filepath.Join(torDataDir, "torrc")); err != nil {
+		log.Errorf("failed to build torrc: %v", err)
+		return 9
+	}
+	acn, err := tor.NewTorACNWithAuth(appDir, cwtchcore.GlobalTorPath, torDataDir, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
+	if err != nil || acn == nil {
+		log.Errorf("failed to construct Tor ACN: %v", err)
+		if err == nil {
+			log.Errorf("Tor ACN was nil")
+		}
+		return 10
+	}
 	cwtchcore.GlobalACN = connectivity.NewProxyACN(acn)
 	cwtchcore.Application = app.NewApp(&cwtchcore.GlobalACN, appDir)
 
