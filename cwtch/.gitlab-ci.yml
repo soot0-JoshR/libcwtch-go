@@ -1,0 +1,60 @@
+image: golang:latest
+
+#before_script:
+
+stages:
+    - test
+    - docker-push
+    - deploy-staging
+
+test-server:
+    stage: test
+    script:
+        - mkdir /go/src/cwtch.im
+        - ln -s /builds/${CI_PROJECT_NAMESPACE}/cwtch /go/src/cwtch.im/cwtch
+        - cd /go/src/cwtch.im/cwtch/server/app/
+        - go get 
+        - go tool vet -composites=false -shadow=true *.go
+        - go test
+
+test-client:
+    stage: test
+    script:
+        - mkdir /go/src/cwtch.im
+        - ln -s /builds/${CI_PROJECT_NAMESPACE}/cwtch /go/src/cwtch.im/cwtch
+        - cd /go/src/cwtch.im/cwtch/app/cli/
+        - go get 
+        - go tool vet -composites=false -shadow=true *.go
+        - go test
+    # We don't really care about the client here but it's useful to know what's
+    # happening on t'other side of the coin
+    allow_failure: true
+
+
+gitlab-registry:
+    stage: docker-push
+    image: docker:latest
+    services:
+      - docker:dind
+    tags:
+    script:
+      - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN  ${CI_REGISTRY}
+      - docker build -t ${CI_REGISTRY_IMAGE}:latest -t ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA:0:8} .
+      - docker push ${CI_REGISTRY_IMAGE}:latest
+      - docker push ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA:0:8}
+    dependencies:
+      - test-server
+
+docker-hub:
+    stage: docker-push
+    image: docker:latest
+    services:
+      - docker:dind
+    tags:
+    script:
+      - docker login -u ${DOCKER_HUB_ID} -p ${DOCKER_HUB_PASSWORD} registry.hub.docker.com
+      - docker build -t registry.hub.docker.com/${DOCKER_HUB_ID}/cwtch:latest -t registry.hub.docker.com/${DOCKER_HUB_ID}/cwtch:${CI_COMMIT_SHA:0:8} .
+      - docker push registry.hub.docker.com/${DOCKER_HUB_ID}/cwtch:latest 
+      - docker push registry.hub.docker.com/${DOCKER_HUB_ID}/cwtch:${CI_COMMIT_SHA:0:8}
+    dependencies:
+      - test-server

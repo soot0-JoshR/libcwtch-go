@@ -36,6 +36,7 @@ import (
 	"git.openprivacy.ca/openprivacy/connectivity"
 
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/utils"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/cwtchcore"
 
 	"encoding/base64"
 	mrand "math/rand"
@@ -184,6 +185,10 @@ func _startCwtch(appDir string, torPath string) {
 	servers.InitServers(&globalACN, appDir, eventHandler.Push)
 
 	eventHandler.HandleApp(application)
+
+	cwtchcore.Application = application
+	cwtchcore.EventHandler = eventHandler
+	cwtchcore.GlobalACN = globalACN
 
 	// Settings may have changed...
 	settings = utils.ReadGlobalSettings()
@@ -1546,3 +1551,14 @@ func GetDebugInfo() string {
 
 // Leave as is, needed by ffi
 func main() {}
+
+//export c_SignChallenge
+func c_SignChallenge(profile_ptr *C.char, profile_len C.int, challenge_ptr *C.char, challenge_len C.int) *C.char {
+	profile := C.GoStringN(profile_ptr, profile_len)
+	challenge := C.GoStringN(challenge_ptr, challenge_len)
+	sig := cwtchcore.SignChallenge(profile, challenge)
+	if sig == "" {
+		return nil
+	}
+	return C.CString(sig)
+}

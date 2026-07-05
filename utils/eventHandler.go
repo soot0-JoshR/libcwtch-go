@@ -754,3 +754,48 @@ func handleImagePreviews(profile peer.CwtchPeer, ev *event.Event, conversationID
 		}
 	}
 }
+
+var OnFileOfferReceived func(profileOnion string, peerOnion string, conversationID int, messageIndex int, name string, size int64, fileKey string)
+var OnFileProgressUpdated func(fileKey string, progress float64, state string)
+
+func (eh *EventHandler) TryNextEvent() string {
+	appChan := eh.appBusQueue.OutChan()
+	select {
+	case e := <-appChan:
+		return eh.handleAppBusEvent(&e)
+	case ev := <-eh.profileEvents:
+		eh.interceptProfileEvent(&ev)
+		return eh.handleProfileEvent(&ev)
+	default:
+		return ""
+	}
+}
+
+func (eh *EventHandler) interceptProfileEvent(ev *EventProfileEnvelope) {
+	switch ev.Event.EventType {
+	case event.NewMessageFromPeer, event.NewMessageFromGroup:
+		var cm model.MessageWrapper
+		err := json.Unmarshal([]byte(ev.Event.Data[event.Data]), &cm)
+		if err == nil && cm.Overlay == model.OverlayFileSharing {
+			var fm filesharing.OverlayMessage
+			err = json.Unmarshal([]byte(cm.Data), &fm)
+			if err == nil && OnFileOfferReceived != nil {
+				cID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
+				mID, _ := strconv.Atoi(ev.Event.Data["Index"])
+				OnFileOfferReceived(ev.Profile, ev.Event.Data["RemotePeer"], cID, mID, fm.Name, int64(fm.Size), fm.FileKey())
+			}
+		}
+	case event.FileDownloadProgressUpdate:
+		fileKey := ev.Event.Data[event.FileKey]
+		progressStr := ev.Event.Data[event.Progress]
+		progressVal, _ := strconv.ParseFloat(progressStr, 64)
+		if OnFileProgressUpdated != nil {
+			OnFileProgressUpdated(fileKey, progressVal, "downloading")
+		}
+	case event.FileDownloaded:
+		fileKey := ev.Event.Data[event.FileKey]
+		if OnFileProgressUpdated != nil {
+			OnFileProgressUpdated(fileKey, 1.0, "complete")
+		}
+	}
+}

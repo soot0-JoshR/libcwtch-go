@@ -1,6 +1,6 @@
 module git.openprivacy.ca/cwtch.im/libcwtch-go
 
-go 1.17
+go 1.25.0
 
 require (
 	cwtch.im/cwtch v0.18.10
@@ -18,14 +18,15 @@ require (
 	github.com/gtank/ristretto255 v0.1.3-0.20210930101514-6bb39798585c // indirect
 	github.com/mimoo/StrobeGo v0.0.0-20220103164710-9a04d6ca976b // indirect
 	go.etcd.io/bbolt v1.3.6 // indirect
-	golang.org/x/crypto v0.0.0-20220826181053-bd7e27e6170d // indirect
-	// go mobile should stay pinned to golang.org/x/mobile v0.0.0-20210220033013-bdb1ca9a1e08
-	// until we intentionally upgrade it, requiring upgrading our docker container
-	// android_go_mobile as well (matching version there), and possibly after upgrading past go 1.17
-	golang.org/x/mobile v0.0.0-20210220033013-bdb1ca9a1e08 // indirect
-	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3 // indirect
-	golang.org/x/net v0.0.0-20220826154423-83b083e8dc8b // indirect
-	golang.org/x/sys v0.0.0-20220825204002-c680a09ffe64 // indirect
-	golang.org/x/tools v0.1.10 // indirect
-	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/mobile v0.0.0-20260611195102-4dd8f1dbf5d2 // indirect
+	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/tools v0.46.0 // indirect
 )
+
+replace cwtch.im/cwtch => ./cwtch
+
+tool golang.org/x/mobile/cmd/gobind

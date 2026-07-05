@@ -1,0 +1,75 @@
+---
+kind: pipeline
+type: docker
+name: linux-test
+
+steps:
+  - name: fetch
+    image: golang:1.19.1
+    volumes:
+      - name: deps
+        path: /go
+    commands:
+      - go install honnef.co/go/tools/cmd/staticcheck@latest
+      - wget https://git.openprivacy.ca/openprivacy/buildfiles/raw/master/tor/tor
+      - wget https://git.openprivacy.ca/openprivacy/buildfiles/raw/master/tor/torrc
+      - chmod a+x tor
+      - go get -u golang.org/x/lint/golint
+      - export GO111MODULE=on
+      - go mod vendor
+  - name: quality
+    image: golang:1.19.1
+    volumes:
+      - name: deps
+        path: /go
+    commands:
+      - staticcheck ./...
+  - name: units-tests
+    image: golang:1.19.1
+    volumes:
+      - name: deps
+        path: /go
+    commands:
+      - export PATH=`pwd`:$PATH
+      - sh testing/tests.sh
+  - name: integ-test
+    image: golang:1.19.1
+    volumes:
+      - name: deps
+        path: /go
+    commands:
+      - export PATH=`pwd`:$PATH
+      - go test -timeout=30m -race -v cwtch.im/cwtch/testing/
+  - name: filesharing-integ-test
+    image: golang:1.19.1
+    volumes:
+      - name: deps
+        path: /go
+    commands:
+      - export PATH=`pwd`:$PATH
+      - go test -timeout=20m -race -v cwtch.im/cwtch/testing/filesharing
+  - name: notify-gogs
+    image: openpriv/drone-gogs
+    pull: if-not-exists
+    when:
+      event: pull_request
+      status: [ success, changed, failure ]
+    environment:
+      GOGS_ACCOUNT_TOKEN:
+        from_secret: gogs_account_token
+    settings:
+      gogs_url: https://git.openprivacy.ca
+
+
+volumes:
+  # gopath where bin and pkg lives to persist across steps
+  - name: deps
+    temp: {}
+
+trigger:
+  repo: cwtch.im/cwtch
+  branch: master
+  event:
+    - push
+    - pull_request
+    - tag
