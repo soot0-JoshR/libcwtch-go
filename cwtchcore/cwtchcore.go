@@ -1,24 +1,28 @@
 package cwtchcore
 
 import (
+	"cwtch.im/cwtch/app"
+	"cwtch.im/cwtch/functionality/filesharing"
+	"cwtch.im/cwtch/model"
+	"cwtch.im/cwtch/model/attr"
+	"cwtch.im/cwtch/peer"
+	"cwtch.im/cwtch/protocol/connections"
+	"cwtch.im/cwtch/protocol/files"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"sync"
-	"cwtch.im/cwtch/app"
-	"cwtch.im/cwtch/model/attr"
-	"cwtch.im/cwtch/protocol/connections"
-	"cwtch.im/cwtch/functionality/filesharing"
-	"cwtch.im/cwtch/protocol/files"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/utils"
 	"git.openprivacy.ca/openprivacy/connectivity"
 	"git.openprivacy.ca/openprivacy/log"
+	"regexp"
+	"strings"
+	"sync"
 )
 
 type AuthorizedBinding struct {
-	ProfileOnion        string
-	PeerOnion           string
-	CwtchConversationID int32
+	ProfileOnion         string
+	PeerOnion            string
+	CwtchConversationID  int32
 	StegmsConversationID int32
 }
 
@@ -37,9 +41,9 @@ type MediaOffer struct {
 }
 
 var (
-	stateMutex sync.RWMutex
-	Application  app.Application
-	EventHandler *utils.EventHandler
+	stateMutex    sync.RWMutex
+	Application   app.Application
+	EventHandler  *utils.EventHandler
 	GlobalTorPath string
 	GlobalAppDir  string
 	GlobalACN     connectivity.ProxyACN
@@ -47,9 +51,79 @@ var (
 	authorizedBindings = make(map[string]AuthorizedBinding)
 	authMutex          sync.Mutex
 
-	mediaOffersMutex sync.Mutex
-	mediaOffers      = make(map[string]MediaOffer)
+	mediaOffersMutex   sync.Mutex
+	mediaOffers        = make(map[string]MediaOffer)
+	ensureContactMutex sync.Mutex
 )
+
+type EnsureContactResult struct {
+	Status         string `json:"status"`
+	ConversationID int    `json:"conversationId,omitempty"`
+	Created        bool   `json:"created"`
+	Reason         string `json:"reason,omitempty"`
+}
+
+var validOnionAddress = regexp.MustCompile(`^[a-z2-7]{56}$`)
+
+func normalizeOnion(value string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), ".onion")
+}
+
+func ensureContactJSON(result EnsureContactResult) string {
+	encoded, _ := json.Marshal(result)
+	return string(encoded)
+}
+
+func EnsureContactForProfile(profile peer.CwtchPeer, profileOnionRaw string, peerOnionRaw string) string {
+	ensureContactMutex.Lock()
+	defer ensureContactMutex.Unlock()
+
+	profileOnion := normalizeOnion(profileOnionRaw)
+	peerOnion := normalizeOnion(peerOnionRaw)
+	if !validOnionAddress.MatchString(profileOnion) || !validOnionAddress.MatchString(peerOnion) {
+		return ensureContactJSON(EnsureContactResult{Status: "error", Reason: "invalid_onion"})
+	}
+	if profileOnion == peerOnion {
+		return ensureContactJSON(EnsureContactResult{Status: "error", Reason: "self_onion"})
+	}
+
+	if conversation, err := profile.FetchConversationInfo(peerOnion); err == nil && conversation != nil {
+		return ensureContactJSON(EnsureContactResult{
+			Status: "existing", ConversationID: conversation.ID,
+		})
+	}
+
+	conversationID, err := profile.NewContactConversation(
+		peerOnion, model.DefaultP2PAccessControl(), true,
+	)
+	if err != nil {
+		// Another caller or Cwtch event may have created it concurrently.
+		if conversation, fetchErr := profile.FetchConversationInfo(peerOnion); fetchErr == nil && conversation != nil {
+			return ensureContactJSON(EnsureContactResult{
+				Status: "existing", ConversationID: conversation.ID,
+			})
+		}
+		log.Errorf("EnsureContact storage error: %v", err)
+		return ensureContactJSON(EnsureContactResult{Status: "error", Reason: "storage_error"})
+	}
+	return ensureContactJSON(EnsureContactResult{
+		Status: "created", ConversationID: conversationID, Created: true,
+	})
+}
+
+func EnsureContact(profileOnionRaw string, peerOnionRaw string) string {
+	stateMutex.RLock()
+	defer stateMutex.RUnlock()
+
+	if Application != nil {
+		if profile := Application.GetPeer(normalizeOnion(profileOnionRaw)); profile != nil {
+			return EnsureContactForProfile(profile, profileOnionRaw, peerOnionRaw)
+		}
+	}
+	return ensureContactJSON(EnsureContactResult{
+		Status: "error", Reason: "application_not_initialized",
+	})
+}
 
 func init() {
 	utils.OnFileOfferReceived = func(profileOnion string, peerOnion string, conversationID int, messageIndex int, name string, size int64, fileKey string) {
@@ -109,7 +183,7 @@ func CreateProfile(nick string, password string) {
 	defer stateMutex.RUnlock()
 	if Application != nil {
 		Application.CreatePeer(nick, password, map[attr.ZonedPath]string{
-			attr.ProfileZone.ConstructZonedPath("tag"): "v1-password",
+			attr.ProfileZone.ConstructZonedPath("tag"):       "v1-password",
 			attr.ProfileZone.ConstructZonedPath("autostart"): "true",
 		})
 	}
@@ -296,7 +370,7 @@ func RequestMedia(transferID string) {
 	// Mandatory safeguard: Hold stateMutex.RLock() throughout RequestMedia
 	stateMutex.RLock()
 	defer stateMutex.RUnlock()
-	
+
 	appInst := Application
 	if appInst == nil {
 		return
@@ -345,9 +419,9 @@ func AuthorizeConversation(profileOnion string, peerOnion string, cwtchConversat
 			// Mandatory safeguard: Key by both profile and peer to prevent cross-profile collisions
 			bindingKey := fmt.Sprintf("%s:%s", profileOnion, peerOnion)
 			authorizedBindings[bindingKey] = AuthorizedBinding{
-				ProfileOnion:        profileOnion,
-				PeerOnion:           peerOnion,
-				CwtchConversationID: cwtchConversationID,
+				ProfileOnion:         profileOnion,
+				PeerOnion:            peerOnion,
+				CwtchConversationID:  cwtchConversationID,
 				StegmsConversationID: stegmsConversationID,
 			}
 			authMutex.Unlock()

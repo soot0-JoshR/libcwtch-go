@@ -35,8 +35,8 @@ import (
 	"git.openprivacy.ca/cwtch.im/server"
 	"git.openprivacy.ca/openprivacy/connectivity"
 
-	"git.openprivacy.ca/cwtch.im/libcwtch-go/utils"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/cwtchcore"
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/utils"
 
 	"encoding/base64"
 	mrand "math/rand"
@@ -81,6 +81,22 @@ func c_StartCwtch(dir_c *C.char, len C.int, tor_c *C.char, torLen C.int) C.int {
 	applicationDirectory := C.GoStringN(dir_c, len)
 	torDirectory := C.GoStringN(tor_c, torLen)
 	return C.int(StartCwtch(applicationDirectory, torDirectory))
+}
+
+//export c_EnsureContact
+func c_EnsureContact(profilePtr *C.char, profileLen C.int, peerPtr *C.char, peerLen C.int) *C.char {
+	profileOnionRaw := C.GoStringN(profilePtr, profileLen)
+	peerOnionRaw := C.GoStringN(peerPtr, peerLen)
+	profileOnion := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(profileOnionRaw)), ".onion")
+	if application != nil {
+		if profile := application.GetPeer(profileOnion); profile != nil {
+			return C.CString(cwtchcore.EnsureContactForProfile(profile, profileOnionRaw, peerOnionRaw))
+		}
+	}
+	result, _ := json.Marshal(cwtchcore.EnsureContactResult{
+		Status: "error", Reason: "application_not_initialized",
+	})
+	return C.CString(string(result))
 }
 
 // StartCwtch starts cwtch in the library and initlaizes all data structures

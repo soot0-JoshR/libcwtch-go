@@ -8,6 +8,7 @@ import (
 	"git.openprivacy.ca/openprivacy/connectivity"
 	"git.openprivacy.ca/openprivacy/connectivity/tor"
 	"git.openprivacy.ca/openprivacy/log"
+	_ "github.com/mutecomm/go-sqlcipher/v4"
 
 	"crypto/rand"
 	"encoding/base64"
@@ -138,6 +139,10 @@ func SendMessage(profileOnion string, peerOnion string, message string) string {
 
 func SendInvitation(profileOnion string, peerOnion string, message string) string {
 	return cwtchcore.SendInvitation(profileOnion, peerOnion, message)
+}
+
+func EnsureContact(profileOnion string, peerOnion string) string {
+	return cwtchcore.EnsureContact(profileOnion, peerOnion)
 }
 
 func SendFile(profileOnion string, peerOnion string, filePath string) {
