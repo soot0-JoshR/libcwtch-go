@@ -88,6 +88,10 @@ func EnsureContactForProfile(profile peer.CwtchPeer, profileOnionRaw string, pee
 	}
 
 	if conversation, err := profile.FetchConversationInfo(peerOnion); err == nil && conversation != nil {
+		if err := profile.AcceptConversation(conversation.ID); err != nil {
+			log.Errorf("EnsureContact accept error: %v", err)
+			return ensureContactJSON(EnsureContactResult{Status: "error", Reason: "storage_error"})
+		}
 		return ensureContactJSON(EnsureContactResult{
 			Status: "existing", ConversationID: conversation.ID,
 		})
@@ -106,6 +110,9 @@ func EnsureContactForProfile(profile peer.CwtchPeer, profileOnionRaw string, pee
 		log.Errorf("EnsureContact storage error: %v", err)
 		return ensureContactJSON(EnsureContactResult{Status: "error", Reason: "storage_error"})
 	}
+	// NewContactConversation persists the contact but does not initiate a
+	// connection. Match Cwtch's normal contact-import behavior.
+	profile.PeerWithOnion(peerOnion)
 	return ensureContactJSON(EnsureContactResult{
 		Status: "created", ConversationID: conversationID, Created: true,
 	})
@@ -244,6 +251,9 @@ func SendMessage(profileOnion string, peerOnion string, message string) string {
 		if profile != nil {
 			conversation, err := profile.FetchConversationInfo(peerOnion)
 			if err == nil && conversation != nil {
+				if profile.GetPeerState(peerOnion) != connections.AUTHENTICATED {
+					return `{"status":"error","reason":"peer_not_connected"}`
+				}
 				id, err := profile.SendMessage(conversation.ID, message)
 				if err == nil {
 					return fmt.Sprintf(`{"id":%d,"status":"sent"}`, id)
@@ -252,7 +262,7 @@ func SendMessage(profileOnion string, peerOnion string, message string) string {
 			}
 		}
 	}
-	return ""
+	return `{"status":"error","reason":"send_failed"}`
 }
 
 func SendInvitation(profileOnion string, peerOnion string, message string) string {

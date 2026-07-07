@@ -9,6 +9,7 @@ import "C"
 import (
 	"crypto/rand"
 	constants2 "cwtch.im/cwtch/model/constants"
+	"cwtch.im/cwtch/protocol/connections"
 	"cwtch.im/cwtch/protocol/files"
 	"encoding/json"
 	"fmt"
@@ -97,6 +98,29 @@ func c_EnsureContact(profilePtr *C.char, profileLen C.int, peerPtr *C.char, peer
 		Status: "error", Reason: "application_not_initialized",
 	})
 	return C.CString(string(result))
+}
+
+//export c_GetPeerState
+func c_GetPeerState(profilePtr *C.char, profileLen C.int, peerPtr *C.char, peerLen C.int) *C.char {
+	profileOnion := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(C.GoStringN(profilePtr, profileLen))), ".onion")
+	peerOnion := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(C.GoStringN(peerPtr, peerLen))), ".onion")
+	if application != nil {
+		if profile := application.GetPeer(profileOnion); profile != nil {
+			state := profile.GetPeerState(peerOnion)
+			return C.CString(connections.ConnectionStateName[state])
+		}
+	}
+	return C.CString("Disconnected")
+}
+
+//export c_GetPeerStates
+func c_GetPeerStates() *C.char {
+	return C.CString(cwtchcore.GetPeerStates())
+}
+
+//export c_GetConversationMap
+func c_GetConversationMap() *C.char {
+	return C.CString(cwtchcore.GetConversationMap())
 }
 
 // StartCwtch starts cwtch in the library and initlaizes all data structures
@@ -891,6 +915,9 @@ func SendMessage(profileOnion string, conversationID int, msg string) string {
 		if err == nil {
 			return GetMessageByID(profileOnion, conversationID, id)
 		}
+		fmt.Printf("[lib.go] SendMessage error for convId %d: %v\n", conversationID, err)
+	} else {
+		fmt.Printf("[lib.go] SendMessage error: profile %s not found\n", profileOnion)
 	}
 	return ""
 }
