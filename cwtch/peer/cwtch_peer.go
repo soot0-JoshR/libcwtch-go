@@ -93,6 +93,16 @@ func (cp *cwtchPeer) Export(file string) error {
 	return cp.storage.Export(file)
 }
 
+func (cp *cwtchPeer) PromoteToEncryptedStore(profileDirectory string, password string) error {
+	return cp.storage.PromoteToEncryptedStore(profileDirectory, password)
+}
+
+func (cp *cwtchPeer) IsMemoryStore() bool {
+	cp.mutex.Lock()
+	defer cp.mutex.Unlock()
+	return cp.storage.IsMemoryStore()
+}
+
 func (cp *cwtchPeer) Delete() {
 	cp.mutex.Lock()
 	defer cp.mutex.Unlock()
@@ -120,6 +130,10 @@ func (cp *cwtchPeer) CheckPassword(password string) bool {
 	// we keep it here.
 	cp.mutex.Lock()
 	defer cp.mutex.Unlock()
+
+	if cp.storage.IsMemoryStore() {
+		return true
+	}
 
 	// open *our* database with the given password (set createIfNotExists to false)
 	db, err := openEncryptedDatabase(cp.storage.ProfileDirectory, password, false)

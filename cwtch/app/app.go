@@ -9,6 +9,7 @@ import (
 	"cwtch.im/cwtch/peer"
 	"cwtch.im/cwtch/protocol/connections"
 	"cwtch.im/cwtch/storage"
+	"fmt"
 	"git.openprivacy.ca/openprivacy/connectivity"
 	"git.openprivacy.ca/openprivacy/log"
 	"os"
@@ -35,9 +36,11 @@ type application struct {
 type Application interface {
 	LoadProfiles(password string)
 	CreatePeer(name string, password string, attributes map[attr.ZonedPath]string)
+	CreateEphemeralPeer(name string, password string, attributes map[attr.ZonedPath]string)
 	// Deprecated in 1.10
 	CreateTaggedPeer(name string, password string, tag string)
 	ImportProfile(exportedCwtchFile string, password string) (peer.CwtchPeer, error)
+	PromoteEphemeralProfile(onion string, password string) error
 	DeletePeer(onion string, currentPassword string)
 	AddPeerPlugin(onion string, pluginID plugins.PluginID)
 
@@ -56,6 +59,12 @@ type Application interface {
 	GetPeer(onion string) peer.CwtchPeer
 	ListProfiles() []string
 }
+
+const (
+	stegmsProfileLifetimeAttribute = "stegms_lifetime"
+	stegmsProfileStorageAttribute  = "stegms_storage"
+	stegmsProfileSourceAttribute   = "stegms_source"
+)
 
 // LoadProfileFn is the function signature for a function in an app that loads a profile
 type LoadProfileFn func(profile peer.CwtchPeer)
@@ -151,9 +160,96 @@ func (app *application) CreatePeer(name string, password string, attributes map[
 		zone, key := attr.ParseZone(zp.ToString())
 		profile.SetScopedZonedAttribute(attr.LocalScope, zone, key, val)
 	}
+	if _, ok := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileLifetimeAttribute); !ok {
+		profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileLifetimeAttribute, "persistent")
+	}
+	if _, ok := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileStorageAttribute); !ok {
+		profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileStorageAttribute, "disk")
+	}
+	if _, ok := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileSourceAttribute); !ok {
+		profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileSourceAttribute, "stegms")
+	}
 
 	app.AddPeerPlugin(profile.GetOnion(), plugins.CONNECTIONRETRY) // Now Mandatory
-	app.appBus.Publish(event.NewEvent(event.NewPeer, map[event.Field]string{event.Identity: profile.GetOnion(), event.Created: event.True}))
+	app.appBus.Publish(event.NewEvent(event.NewPeer, map[event.Field]string{event.Identity: profile.GetOnion(), event.Created: event.True, "name": name}))
+}
+
+func (app *application) CreateEphemeralPeer(name string, password string, attributes map[attr.ZonedPath]string) {
+	app.appmutex.Lock()
+	defer app.appmutex.Unlock()
+
+	profile, err := peer.CreateMemoryStorePeer(name, password)
+	if err != nil {
+		log.Errorf("Error Creating Ephemeral Peer: %v", err)
+		app.appBus.Publish(event.NewEventList(event.PeerError, event.Error, err.Error()))
+		return
+	}
+
+	eventBus := event.NewEventManager()
+	app.eventBuses[profile.GetOnion()] = eventBus
+	profile.Init(app.eventBuses[profile.GetOnion()])
+	app.peers[profile.GetOnion()] = profile
+
+	for zp, val := range attributes {
+		zone, key := attr.ParseZone(zp.ToString())
+		profile.SetScopedZonedAttribute(attr.LocalScope, zone, key, val)
+	}
+
+	// Mark as ephemeral in StegMS metadata attributes.
+	profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileLifetimeAttribute, "ephemeral")
+	profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileStorageAttribute, "memory")
+	if _, ok := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileSourceAttribute); !ok {
+		profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileSourceAttribute, "guest")
+	}
+
+	app.AddPeerPlugin(profile.GetOnion(), plugins.CONNECTIONRETRY)
+	app.appBus.Publish(event.NewEvent(event.NewPeer, map[event.Field]string{
+		event.Identity: profile.GetOnion(), 
+		event.Created: event.True,
+		"name": name,
+	}))
+}
+
+func (app *application) PromoteEphemeralProfile(onion string, password string) error {
+	app.appmutex.Lock()
+	defer app.appmutex.Unlock()
+	
+	p, exists := app.peers[onion]
+	if !exists {
+		return fmt.Errorf("ephemeral profile not found")
+	}
+	
+	profileDirectory := path.Join(app.directory, "profiles", model.GenerateRandomID())
+
+	previousLifetime, hadPreviousLifetime := p.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileLifetimeAttribute)
+	previousStorage, hadPreviousStorage := p.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileStorageAttribute)
+	previousSource, hadPreviousSource := p.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileSourceAttribute)
+
+	p.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileLifetimeAttribute, "persistent")
+	p.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileStorageAttribute, "disk")
+	p.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileSourceAttribute, "guest_promoted")
+
+	err := p.PromoteToEncryptedStore(profileDirectory, password)
+	if err != nil {
+		if hadPreviousLifetime {
+			p.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileLifetimeAttribute, previousLifetime)
+		} else {
+			p.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileLifetimeAttribute, "ephemeral")
+		}
+		if hadPreviousStorage {
+			p.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileStorageAttribute, previousStorage)
+		} else {
+			p.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileStorageAttribute, "memory")
+		}
+		if hadPreviousSource {
+			p.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileSourceAttribute, previousSource)
+		} else {
+			p.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileSourceAttribute, "guest")
+		}
+		return err
+	}
+	
+	return nil
 }
 
 func (app *application) DeletePeer(onion string, password string) {
@@ -184,7 +280,12 @@ func (app *application) AddPeerPlugin(onion string, pluginID plugins.PluginID) {
 func (app *application) ImportProfile(exportedCwtchFile string, password string) (peer.CwtchPeer, error) {
 	profileDirectory := path.Join(app.directory, "profiles")
 	profile, err := peer.ImportProfile(exportedCwtchFile, profileDirectory, password)
-	if profile != nil || err == nil {
+	if profile != nil && err == nil {
+		if _, ok := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileLifetimeAttribute); !ok {
+			profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileLifetimeAttribute, "persistent")
+		}
+		profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileStorageAttribute, "disk")
+		profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileSourceAttribute, "imported")
 		app.installProfile(profile)
 	}
 	return profile, err

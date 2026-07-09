@@ -92,6 +92,58 @@ func openEncryptedDatabase(profileDirectory string, password string, createIfNot
 	return db, nil
 }
 
+func randomMemoryStoreID() (string, error) {
+	var id [16]byte
+	if _, err := io.ReadFull(rand.Reader, id[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(id[:]), nil
+}
+
+func openMemoryDatabase(password string, storeID string) (*sql.DB, error) {
+	// We use a dummy key to initialize the SQLCipher memory database
+	key := createKey(password, []byte("ephemeral-salt"))
+	dbname := fmt.Sprintf("file:cwtch-ephemeral-%s?mode=memory&cache=shared&_pragma_key=x'%x'&_pragma_cipher_page_size=8192", storeID, key)
+	db, err := sql.Open("sqlite3", dbname)
+	if err != nil {
+		log.Errorf("could not open memory database", err)
+		return nil, err
+	}
+	return db, nil
+}
+
+// CreateMemoryStorePeer creates a *new* Cwtch Profile backed by an in-memory datastore
+func CreateMemoryStorePeer(name string, password string) (CwtchPeer, error) {
+	log.Debugf("Opening Memory Database")
+	storeID, err := randomMemoryStoreID()
+	if err != nil {
+		return nil, fmt.Errorf("unable to generate memory store id: %v", err)
+	}
+	db, err := openMemoryDatabase(password, storeID)
+	if db == nil || err != nil {
+		return nil, fmt.Errorf("unable to open memory database: error: %v", err)
+	}
+
+	log.Debugf("Initializing Database")
+	err = initializeDatabase(db)
+
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	log.Debugf("Creating Cwtch Profile Backed By Memory Database")
+
+	profileDirectory := "memory://" + storeID
+	cps, err := NewMemoryCwtchProfileStorage(db, profileDirectory)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	return NewProfileWithEncryptedStorage(name, cps), nil
+}
+
 // CreateEncryptedStorePeer creates a *new* Cwtch Profile backed by an encrypted datastore
 func CreateEncryptedStorePeer(profileDirectory string, name string, password string) (CwtchPeer, error) {
 	log.Debugf("Initializing Encrypted Storage Directory")

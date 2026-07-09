@@ -1,6 +1,6 @@
-//package cwtch
+package cwtch
 
-package main
+//package main
 
 // //Needed to invoke C.free
 // #include <stdlib.h>
@@ -30,6 +30,7 @@ import (
 	"cwtch.im/cwtch/functionality/filesharing"
 	"cwtch.im/cwtch/model"
 	"cwtch.im/cwtch/model/attr"
+	"cwtch.im/cwtch/peer"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/groups"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
@@ -52,6 +53,10 @@ const (
 	// ProfileOnion is an event field that contains the handle for a given profile.
 	// todo: this should probably be moved back into Cwtch, and renamed ProfileHandle (onions are too tor-specific)
 	ProfileOnion = event.Field("ProfileOnion")
+
+	profileLifetimeAttribute  = "stegms_lifetime"
+	profileLifetimePersistent = "persistent"
+	profileLifetimeEphemeral  = "ephemeral"
 )
 
 // supplied by make
@@ -589,10 +594,31 @@ func DeactivatePeerEngine(profile string) {
 
 //export c_CreateProfile
 func c_CreateProfile(nick_ptr *C.char, nick_len C.int, pass_ptr *C.char, pass_len C.int, autostart C.char) {
-	CreateProfile(C.GoStringN(nick_ptr, nick_len), C.GoStringN(pass_ptr, pass_len), autostart == 1)
+	CreateProfileWithLifetime(C.GoStringN(nick_ptr, nick_len), C.GoStringN(pass_ptr, pass_len), autostart == 1, profileLifetimePersistent)
 }
 
 func CreateProfile(nick, pass string, autostart bool) {
+	CreateProfileWithLifetime(nick, pass, autostart, profileLifetimePersistent)
+}
+
+//export c_CreateProfileWithLifetime
+func c_CreateProfileWithLifetime(nick_ptr *C.char, nick_len C.int, pass_ptr *C.char, pass_len C.int, lifetime_ptr *C.char, lifetime_len C.int, autostart C.char) {
+	CreateProfileWithLifetime(
+		C.GoStringN(nick_ptr, nick_len),
+		C.GoStringN(pass_ptr, pass_len),
+		autostart == 1,
+		C.GoStringN(lifetime_ptr, lifetime_len),
+	)
+}
+
+func normalizeProfileLifetime(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), profileLifetimeEphemeral) {
+		return profileLifetimeEphemeral
+	}
+	return profileLifetimePersistent
+}
+
+func CreateProfileWithLifetime(nick, pass string, autostart bool, lifetime string) {
 	autostartVal := constants2.True
 	if !autostart {
 		autostartVal = constants2.False
@@ -603,9 +629,61 @@ func CreateProfile(nick, pass string, autostart bool) {
 	}
 
 	application.CreatePeer(nick, pass, map[attr.ZonedPath]string{
-		attr.ProfileZone.ConstructZonedPath(constants2.Tag):          tagVal,
-		attr.ProfileZone.ConstructZonedPath(constants.PeerAutostart): autostartVal,
+		attr.ProfileZone.ConstructZonedPath(constants2.Tag):           tagVal,
+		attr.ProfileZone.ConstructZonedPath(constants.PeerAutostart):  autostartVal,
+		attr.ProfileZone.ConstructZonedPath(profileLifetimeAttribute): normalizeProfileLifetime(lifetime),
 	})
+}
+
+type ProfileMetadata struct {
+	Onion    string `json:"onion"`
+	Name     string `json:"name"`
+	Lifetime string `json:"lifetime"`
+}
+
+func profileMetadataFor(profile peer.CwtchPeer) ProfileMetadata {
+	name, ok := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants2.Name)
+	if !ok || name == "" {
+		name = "Unnamed"
+	}
+	lifetime, ok := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, profileLifetimeAttribute)
+	if !ok || lifetime == "" {
+		lifetime = profileLifetimePersistent
+	}
+	return ProfileMetadata{
+		Onion:    profile.GetOnion(),
+		Name:     name,
+		Lifetime: normalizeProfileLifetime(lifetime),
+	}
+}
+
+//export c_GetProfileMetadata
+func c_GetProfileMetadata() *C.char {
+	metadata := make([]ProfileMetadata, 0)
+	if application != nil {
+		for _, onion := range application.ListProfiles() {
+			if profile := application.GetPeer(onion); profile != nil {
+				metadata = append(metadata, profileMetadataFor(profile))
+			}
+		}
+	}
+	encoded, _ := json.Marshal(metadata)
+	return C.CString(string(encoded))
+}
+
+//export c_SetProfileLifetime
+func c_SetProfileLifetime(profile_ptr *C.char, profile_len C.int, lifetime_ptr *C.char, lifetime_len C.int) *C.char {
+	profileOnion := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(C.GoStringN(profile_ptr, profile_len))), ".onion")
+	lifetime := C.GoStringN(lifetime_ptr, lifetime_len)
+	if application == nil {
+		return C.CString(`{"status":"error","reason":"application_not_initialized"}`)
+	}
+	profile := application.GetPeer(profileOnion)
+	if profile == nil {
+		return C.CString(`{"status":"error","reason":"profile_not_found"}`)
+	}
+	profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, profileLifetimeAttribute, normalizeProfileLifetime(lifetime))
+	return C.CString(`{"status":"ok"}`)
 }
 
 //export c_LoadProfiles
@@ -1102,15 +1180,37 @@ func c_DeleteProfile(profile_ptr *C.char, profile_len C.int, password_ptr *C.cha
 	DeleteProfile(profile, password)
 }
 
+//export c_DeleteProfileResult
+func c_DeleteProfileResult(profile_ptr *C.char, profile_len C.int, password_ptr *C.char, password_len C.int) *C.char {
+	profile := C.GoStringN(profile_ptr, profile_len)
+	password := C.GoStringN(password_ptr, password_len)
+	return C.CString(DeleteProfileResult(profile, password))
+}
+
 // DeleteProfile deletes a profile given the right password
 func DeleteProfile(profile string, password string) {
+	_ = DeleteProfileResult(profile, password)
+}
 
+func DeleteProfileResult(profile string, password string) string {
 	// allow a blank password to delete "unencrypted" accounts...
 	if password == "" {
 		password = constants.DefactoPasswordForUnencryptedProfiles
 	}
 
-	application.DeletePeer(profile, password)
+	if application == nil {
+		return `{"status":"error","reason":"application_not_initialized"}`
+	}
+	profileOnion := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(profile)), ".onion")
+	peer := application.GetPeer(profileOnion)
+	if peer == nil {
+		return `{"status":"error","reason":"profile_not_found"}`
+	}
+	if !peer.CheckPassword(password) {
+		return `{"status":"error","reason":"invalid_password"}`
+	}
+	application.DeletePeer(profileOnion, password)
+	return `{"status":"deleted"}`
 }
 
 //export c_ArchiveConversation
@@ -1336,6 +1436,42 @@ func ExportProfile(profileOnion string, file string) {
 	}
 }
 
+//export c_CreateEphemeralProfile
+func c_CreateEphemeralProfile(nick_ptr *C.char, nick_len C.int, pass_ptr *C.char, pass_len C.int) {
+	CreateEphemeralProfile(C.GoStringN(nick_ptr, nick_len), C.GoStringN(pass_ptr, pass_len))
+}
+
+func CreateEphemeralProfile(nick, pass string) {
+	autostartVal := constants2.True
+	tagVal := constants.ProfileTypeV1Password
+	if pass == constants.DefactoPasswordForUnencryptedProfiles {
+		tagVal = constants.ProfileTypeV1DefaultPassword
+	}
+
+	application.CreateEphemeralPeer(nick, pass, map[attr.ZonedPath]string{
+		attr.ProfileZone.ConstructZonedPath(constants2.Tag):           tagVal,
+		attr.ProfileZone.ConstructZonedPath(constants.PeerAutostart):  autostartVal,
+	})
+}
+
+//export c_PromoteEphemeralProfile
+func c_PromoteEphemeralProfile(onion_ptr *C.char, onion_len C.int, pass_ptr *C.char, pass_len C.int) *C.char {
+	onion := C.GoStringN(onion_ptr, onion_len)
+	pass := C.GoStringN(pass_ptr, pass_len)
+	err := PromoteEphemeralProfile(onion, pass)
+	if err != nil {
+		return C.CString(fmt.Sprintf(`{"status":"error","reason":"%s"}`, err.Error()))
+	}
+	return C.CString(`{"status":"ok"}`)
+}
+
+func PromoteEphemeralProfile(onion string, pass string) error {
+	if application == nil {
+		return fmt.Errorf("application_not_initialized")
+	}
+	return application.PromoteEphemeralProfile(onion, pass)
+}
+
 //export c_ImportProfile
 func c_ImportProfile(file_ptr *C.char, file_len C.int, passwordPtr *C.char, passwordLen C.int) *C.char {
 	password := C.GoStringN(passwordPtr, passwordLen)
@@ -1347,9 +1483,9 @@ func c_ImportProfile(file_ptr *C.char, file_len C.int, passwordPtr *C.char, pass
 func ImportProfile(exportedCwtchFile string, pass string) string {
 	_, err := application.ImportProfile(exportedCwtchFile, pass)
 	if err == nil {
-		return ""
+		return `{"status":"ok"}`
 	}
-	return err.Error()
+	return fmt.Sprintf(`{"status":"error","reason":"%s"}`, err.Error())
 }
 
 //export c_ShutdownCwtch
@@ -1593,7 +1729,7 @@ func GetDebugInfo() string {
 }
 
 // Leave as is, needed by ffi
-func main() {}
+//func main() {}
 
 //export c_SignChallenge
 func c_SignChallenge(profile_ptr *C.char, profile_len C.int, challenge_ptr *C.char, challenge_len C.int) *C.char {

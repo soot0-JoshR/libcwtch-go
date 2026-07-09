@@ -135,6 +135,8 @@ type CwtchPeer interface {
 	CheckPassword(password string) bool
 	ChangePassword(oldpassword string, newpassword string, newpasswordAgain string) error
 	Export(file string) error
+	PromoteToEncryptedStore(profileDirectory string, password string) error
+	IsMemoryStore() bool
 	Delete()
 	SignMessage(message []byte) ([]byte, error)
 }

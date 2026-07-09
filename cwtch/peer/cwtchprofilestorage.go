@@ -63,6 +63,7 @@ type CwtchProfileStorage struct {
 	channelRowNumberStmts               map[ChannelID]*sql.Stmt
 	ProfileDirectory                    string
 	db                                  *sql.DB
+	memoryStore                         bool
 }
 
 // ChannelID encapsulates the data necessary to reference a channel structure.
@@ -222,6 +223,21 @@ func NewCwtchProfileStorage(db *sql.DB, profileDirectory string) (*CwtchProfileS
 			channelRowNumberStmts:               map[ChannelID]*sql.Stmt{},
 		},
 		nil
+}
+
+// NewMemoryCwtchProfileStorage constructs a profile storage backed by an in-memory database.
+func NewMemoryCwtchProfileStorage(db *sql.DB, profileDirectory string) (*CwtchProfileStorage, error) {
+	cps, err := NewCwtchProfileStorage(db, profileDirectory)
+	if err != nil {
+		return nil, err
+	}
+	cps.memoryStore = true
+	return cps, nil
+}
+
+// IsMemoryStore returns true when the storage is backed by an in-memory database.
+func (cps *CwtchProfileStorage) IsMemoryStore() bool {
+	return cps.memoryStore
 }
 
 // StoreProfileKeyValue allows storing of typed Key/Value attribute in the Storage Engine
@@ -831,6 +847,9 @@ func (cps *CwtchProfileStorage) Close(purgeAllNonSavedMessages bool) {
 // Delete unconditionally destroys the profile directory associated with the store.
 // This is unrecoverable.
 func (cps *CwtchProfileStorage) Delete() {
+	if cps.memoryStore || strings.HasPrefix(cps.ProfileDirectory, "memory://") {
+		return
+	}
 	err := os.RemoveAll(cps.ProfileDirectory)
 	if err != nil {
 		log.Errorf("error deleting profile directory", err)
@@ -846,6 +865,40 @@ func (cps *CwtchProfileStorage) Rekey(newkey [32]byte) error {
 	// PRAGMA queries don't allow subs...
 	_, err := cps.db.Exec(fmt.Sprintf(`PRAGMA rekey="x'%x'";`, newkey))
 	return err
+}
+
+// PromoteToEncryptedStore exports an in-memory database to an encrypted on-disk profile.
+func (cps *CwtchProfileStorage) PromoteToEncryptedStore(profileDirectory string, password string) error {
+	// 1. Initialize V2 directory (creates SALT and VERSION)
+	key, _, err := initV2Directory(profileDirectory, password)
+	if err != nil {
+		return err
+	}
+	
+	// 2. Attach new DB and export
+	cps.mutex.Lock()
+	defer cps.mutex.Unlock()
+	
+	dbPath := filepath.Join(profileDirectory, "db")
+	attachStmt := fmt.Sprintf(`ATTACH DATABASE '%s' AS encrypted KEY "x'%x'";`, dbPath, key)
+	_, err = cps.db.Exec(attachStmt)
+	if err != nil {
+		return fmt.Errorf("failed to attach encrypted db: %v", err)
+	}
+	
+	_, err = cps.db.Exec(`SELECT sqlcipher_export('encrypted');`)
+	if err != nil {
+		// Clean up the attach if export failed
+		cps.db.Exec(`DETACH DATABASE encrypted;`)
+		return fmt.Errorf("failed to export to encrypted db: %v", err)
+	}
+	
+	_, err = cps.db.Exec(`DETACH DATABASE encrypted;`)
+	if err != nil {
+		return fmt.Errorf("failed to detach encrypted db: %v", err)
+	}
+	
+	return nil
 }
 
 // Export takes in a file name and creates an exported cwtch profile file (which in reality is a compressed tarball).

@@ -113,16 +113,48 @@ func ShutdownCwtch() {
 	cwtchcore.ShutdownCwtch()
 }
 
-func CreateProfile(nick string, password string) {
-	cwtchcore.CreateProfile(nick, password)
+func CreateProfile(nick string, password string, lifetime string) {
+	cwtchcore.CreateProfileWithLifetime(nick, password, lifetime)
 }
 
 func LoadProfiles(password string) {
 	cwtchcore.LoadProfiles(password)
 }
 
+func CreateEphemeralProfile(nick string, password string) {
+	cwtchcore.CreateEphemeralProfile(nick, password)
+}
+
+func PromoteEphemeralProfile(profileOnion string, password string) string {
+	err := cwtchcore.PromoteEphemeralProfile(profileOnion, password)
+	if err != nil {
+		return `{"status":"error","reason":"` + err.Error() + `"}`
+	}
+	return `{"status":"ok"}`
+}
+
+func ImportProfile(file string, password string) string {
+	errStr := cwtchcore.ImportProfile(file, password)
+	if errStr != "" {
+		return `{"status":"error","reason":"` + errStr + `"}`
+	}
+	return `{"status":"ok"}`
+}
+
 func GetLoadedProfiles() string {
 	return cwtchcore.GetLoadedProfiles()
+}
+
+func GetProfileMetadata() string {
+	return cwtchcore.GetProfileMetadata()
+}
+
+func SetProfileLifetime(profileOnion string, lifetime string) string {
+	return cwtchcore.SetProfileLifetime(profileOnion, lifetime)
+}
+
+func DeleteProfile(profileOnion string, password string) string {
+	return cwtchcore.DeleteProfile(profileOnion, password)
 }
 
 func SignChallenge(profileOnion string, challenge string) string {
@@ -155,6 +187,10 @@ func GetTorState() string {
 
 func GetPeerStates() string {
 	return cwtchcore.GetPeerStates()
+}
+
+func GetPeerState(profileOnion string, peerOnion string) string {
+	return cwtchcore.GetPeerState(profileOnion, peerOnion)
 }
 
 func GetConversationMap() string {
