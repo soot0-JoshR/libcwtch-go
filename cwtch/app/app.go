@@ -15,6 +15,7 @@ import (
 	"os"
 	path "path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -204,21 +205,21 @@ func (app *application) CreateEphemeralPeer(name string, password string, attrib
 
 	app.AddPeerPlugin(profile.GetOnion(), plugins.CONNECTIONRETRY)
 	app.appBus.Publish(event.NewEvent(event.NewPeer, map[event.Field]string{
-		event.Identity: profile.GetOnion(), 
-		event.Created: event.True,
-		"name": name,
+		event.Identity: profile.GetOnion(),
+		event.Created:  event.True,
+		"name":         name,
 	}))
 }
 
 func (app *application) PromoteEphemeralProfile(onion string, password string) error {
 	app.appmutex.Lock()
 	defer app.appmutex.Unlock()
-	
+
 	p, exists := app.peers[onion]
 	if !exists {
 		return fmt.Errorf("ephemeral profile not found")
 	}
-	
+
 	profileDirectory := path.Join(app.directory, "profiles", model.GenerateRandomID())
 
 	previousLifetime, hadPreviousLifetime := p.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileLifetimeAttribute)
@@ -248,7 +249,7 @@ func (app *application) PromoteEphemeralProfile(onion string, password string) e
 		}
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -291,6 +292,51 @@ func (app *application) ImportProfile(exportedCwtchFile string, password string)
 	return profile, err
 }
 
+func regularProfileFileSize(filePath string) int64 {
+	info, err := os.Stat(filePath)
+	if err != nil || !info.Mode().IsRegular() {
+		return -1
+	}
+	return info.Size()
+}
+
+func inspectProfileStorageCandidate(profilesDirectory string, entry os.DirEntry) (bool, string) {
+	if !entry.IsDir() {
+		return false, "not a directory"
+	}
+	lowerName := strings.ToLower(entry.Name())
+	for _, suffix := range []string{".bak", ".tmp", ".partial"} {
+		if strings.HasSuffix(lowerName, suffix) {
+			return false, "ignored backup or temporary directory"
+		}
+	}
+
+	profileDirectory := path.Join(profilesDirectory, entry.Name())
+	if regularProfileFileSize(path.Join(profileDirectory, "SALT")) != 128 {
+		return false, "missing or invalid SALT"
+	}
+
+	versionPath := path.Join(profileDirectory, "VERSION")
+	if regularProfileFileSize(versionPath) >= 0 {
+		versionBytes, err := os.ReadFile(versionPath)
+		if err != nil {
+			return false, "unreadable VERSION"
+		}
+		if strings.TrimSpace(string(versionBytes)) != "2" {
+			return false, "unsupported profile storage version"
+		}
+		if regularProfileFileSize(path.Join(profileDirectory, "db")) <= 0 {
+			return false, "missing or empty profile database"
+		}
+		return true, "v2"
+	}
+
+	if regularProfileFileSize(path.Join(profileDirectory, "profile")) <= 0 {
+		return false, "unrecognized profile storage layout"
+	}
+	return true, "legacy"
+}
+
 // LoadProfiles takes a password and attempts to load any profiles it can from storage with it and create Peers for them
 func (app *application) LoadProfiles(password string) {
 	count := 0
@@ -303,17 +349,27 @@ func (app *application) LoadProfiles(password string) {
 	}
 
 	for _, file := range files {
+		if valid, reason := inspectProfileStorageCandidate(path.Join(app.directory, "profiles"), file); !valid {
+			log.Warnf("skipping non-profile storage candidate %q: %s", file.Name(), reason)
+			continue
+		}
 		// Attempt to load an encrypted database
 		profileDirectory := path.Join(app.directory, "profiles", file.Name())
-		profile, err := peer.FromEncryptedDatabase(profileDirectory, password)
+		profile, encryptedErr := peer.FromEncryptedDatabase(profileDirectory, password)
 		loaded := false
-		if err == nil {
+		if encryptedErr == nil {
 			// return the load the profile...
 			log.Infof("loading profile from new-type storage database...")
 			loaded = app.installProfile(profile)
 		} else { // On failure attempt to load a legacy profile
-			profileStore, err := storage.LoadProfileWriterStore(profileDirectory, password)
-			if err != nil {
+			profileStore, legacyErr := storage.LoadProfileWriterStore(profileDirectory, password)
+			if legacyErr != nil {
+				log.Warnf(
+					"unable to load profile candidate %q as v2 (%v) or legacy storage (%v)",
+					file.Name(),
+					encryptedErr,
+					legacyErr,
+				)
 				continue
 			}
 			log.Infof("found legacy profile. importing to new database structure...")
@@ -326,6 +382,7 @@ func (app *application) LoadProfiles(password string) {
 			cps, err := peer.CreateEncryptedStore(profileDirectory, password)
 			if err != nil {
 				log.Errorf("error creating encrypted store: %v", err)
+				continue
 			}
 			profile := peer.ImportLegacyProfile(legacyProfile, cps)
 			loaded = app.installProfile(profile)

@@ -2,6 +2,7 @@ package cwtch
 
 import (
 	"cwtch.im/cwtch/app"
+	modelconstants "cwtch.im/cwtch/model/constants"
 	lcgconstants "git.openprivacy.ca/cwtch.im/libcwtch-go/constants"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/cwtchcore"
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/utils"
@@ -20,35 +21,45 @@ import (
 	"time"
 )
 
+var lastStartupError string
+
+func startupFailure(code int32, message string) int32 {
+	lastStartupError = message
+	log.Errorf("Android Cwtch startup failed (%d): %s", code, message)
+	return code
+}
+
+// GetLastStartupError returns diagnostic detail for the most recent failed
+// StartCwtch call. The Android bridge reads it immediately after a non-zero
+// startup result so users receive the real Tor/storage failure.
+func GetLastStartupError() string {
+	return lastStartupError
+}
+
 // StartCwtch initializes the Cwtch application instance for Android and assigns it to cwtchcore.
-func StartCwtch(appDir string, torPath string) int32 {
+func StartCwtch(appDir string, torPath string, noLoadProfiles bool) int32 {
 	if cwtchcore.Application != nil {
+		lastStartupError = ""
 		return 0
 	}
 	if runtime.GOARCH != "arm64" {
-		log.Errorf("unsupported Android Cwtch architecture: %s", runtime.GOARCH)
-		return 2
+		return startupFailure(2, "unsupported Android Cwtch architecture: "+runtime.GOARCH)
 	}
 	if appDir == "" || torPath == "" {
-		log.Errorf("Cwtch startup requires app and Tor paths")
-		return 3
+		return startupFailure(3, "Cwtch startup requires app and Tor paths")
 	}
 	if info, err := os.Stat(torPath); err != nil || info.IsDir() {
-		log.Errorf("invalid bundled Tor path %q: %v", torPath, err)
-		return 4
+		return startupFailure(4, "invalid bundled Tor path: "+torPath)
 	}
 	if err := os.MkdirAll(appDir, 0700); err != nil {
-		log.Errorf("failed to create Cwtch directory: %v", err)
-		return 5
+		return startupFailure(5, "failed to create Cwtch directory: "+err.Error())
 	}
 	torDataDir := filepath.Join(appDir, "tor")
 	if err := os.MkdirAll(torDataDir, 0700); err != nil {
-		log.Errorf("failed to create Tor data directory: %v", err)
-		return 6
+		return startupFailure(6, "failed to create Tor data directory: "+err.Error())
 	}
 	if err := utils.InitGlobalSettingsFile(appDir, lcgconstants.DefactoPasswordForUnencryptedProfiles); err != nil {
-		log.Errorf("failed to initialize Cwtch settings: %v", err)
-		return 7
+		return startupFailure(7, "failed to initialize Cwtch settings: "+err.Error())
 	}
 
 	api := utils.LCG_API_Handler{
@@ -59,6 +70,16 @@ func StartCwtch(appDir string, torPath string) int32 {
 	log.ExcludeFromPattern("service.go")
 
 	settings := utils.ReadGlobalSettings()
+	// StegMS media transport is built on Cwtch's file-sharing overlay. Fresh
+	// installs default that experiment off, which makes SendFile return an empty
+	// result and prevents RequestMedia from starting. Enable it before profiles
+	// and their protocol engines are loaded, and persist the setting.
+	if settings.Experiments == nil {
+		settings.Experiments = make(map[string]bool)
+	}
+	settings.ExperimentsEnabled = true
+	settings.Experiments[modelconstants.FileSharingExperiment] = true
+	utils.WriteGlobalSettings(*settings)
 	cwtchcore.GlobalAppDir = appDir
 	cwtchcore.GlobalTorPath = torPath
 
@@ -67,8 +88,7 @@ func StartCwtch(appDir string, torPath string) int32 {
 	controlPort := socksPort + 1
 	key := make([]byte, 64)
 	if _, err := rand.Read(key); err != nil {
-		log.Errorf("failed to generate Tor authentication key: %v", err)
-		return 8
+		return startupFailure(8, "failed to generate Tor authentication key: "+err.Error())
 	}
 
 	if settings.AllowAdvancedTorConfig {
@@ -89,23 +109,25 @@ func StartCwtch(appDir string, torPath string) int32 {
 	}
 
 	if err := torrc.Build(filepath.Join(torDataDir, "torrc")); err != nil {
-		log.Errorf("failed to build torrc: %v", err)
-		return 9
+		return startupFailure(9, "failed to build torrc: "+err.Error())
 	}
 	acn, err := tor.NewTorACNWithAuth(appDir, cwtchcore.GlobalTorPath, torDataDir, controlPort, tor.HashedPasswordAuthenticator{Password: base64.StdEncoding.EncodeToString(key)})
 	if err != nil || acn == nil {
-		log.Errorf("failed to construct Tor ACN: %v", err)
 		if err == nil {
-			log.Errorf("Tor ACN was nil")
+			return startupFailure(10, "Tor connectivity provider returned no runtime")
 		}
-		return 10
+		return startupFailure(10, "failed to construct Tor connectivity provider: "+err.Error())
 	}
-	cwtchcore.GlobalACN = connectivity.NewProxyACN(acn)
-	cwtchcore.Application = app.NewApp(&cwtchcore.GlobalACN, appDir)
+	proxyACN := connectivity.NewProxyACN(acn)
+	cwtchcore.GlobalACN = &proxyACN
+	cwtchcore.Application = app.NewApp(cwtchcore.GlobalACN, appDir)
 
 	cwtchcore.EventHandler.HandleApp(cwtchcore.Application)
-	cwtchcore.Application.LoadProfiles(lcgconstants.DefactoPasswordForUnencryptedProfiles)
+	if !noLoadProfiles {
+		cwtchcore.Application.LoadProfiles(lcgconstants.DefactoPasswordForUnencryptedProfiles)
+	}
 
+	lastStartupError = ""
 	return 0
 }
 
@@ -134,11 +156,7 @@ func PromoteEphemeralProfile(profileOnion string, password string) string {
 }
 
 func ImportProfile(file string, password string) string {
-	errStr := cwtchcore.ImportProfile(file, password)
-	if errStr != "" {
-		return `{"status":"error","reason":"` + errStr + `"}`
-	}
-	return `{"status":"ok"}`
+	return cwtchcore.ImportProfile(file, password)
 }
 
 func GetLoadedProfiles() string {
@@ -177,8 +195,16 @@ func EnsureContact(profileOnion string, peerOnion string) string {
 	return cwtchcore.EnsureContact(profileOnion, peerOnion)
 }
 
-func SendFile(profileOnion string, peerOnion string, filePath string) {
-	cwtchcore.SendFile(profileOnion, peerOnion, filePath)
+func BlockContact(profileOnion string, peerOnion string) string {
+	return cwtchcore.BlockContact(profileOnion, peerOnion)
+}
+
+func DeleteContact(profileOnion string, peerOnion string) string {
+	return cwtchcore.DeleteContact(profileOnion, peerOnion)
+}
+
+func SendFile(profileOnion string, peerOnion string, filePath string) string {
+	return cwtchcore.SendFile(profileOnion, peerOnion, filePath)
 }
 
 func GetTorState() string {
@@ -189,24 +215,52 @@ func GetPeerStates() string {
 	return cwtchcore.GetPeerStates()
 }
 
+func GetPeerStatesForProfile(profileOnion string) string {
+	return cwtchcore.GetPeerStatesForProfile(profileOnion)
+}
+
 func GetPeerState(profileOnion string, peerOnion string) string {
 	return cwtchcore.GetPeerState(profileOnion, peerOnion)
+}
+
+func LockProfile(profileOnion string) string {
+	return cwtchcore.LockProfile(profileOnion)
+}
+
+func ReconnectCwtchForeground() string {
+	return cwtchcore.ReconnectCwtchForeground()
 }
 
 func GetConversationMap() string {
 	return cwtchcore.GetConversationMap()
 }
 
+func GetConversationMapForProfile(profileOnion string) string {
+	return cwtchcore.GetConversationMapForProfile(profileOnion)
+}
+
+func GetConversationMetadataForProfile(profileOnion string) string {
+	return cwtchcore.GetConversationMetadataForProfile(profileOnion)
+}
+
+func GetMessages(profileOnion string, conversationID int32, messageIndex int32, count int32) string {
+	return cwtchcore.GetMessages(profileOnion, int(conversationID), int(messageIndex), int(count))
+}
+
 func GetMediaOffers() string {
 	return cwtchcore.GetMediaOffers()
 }
 
-func RequestMedia(transferID string) {
-	cwtchcore.RequestMedia(transferID)
+func RequestMedia(transferID string) string {
+	return cwtchcore.RequestMedia(transferID)
 }
 
-func AuthorizeConversation(profileOnion string, peerOnion string, cwtchConversationID int32, stegmsConversationID int32) {
-	cwtchcore.AuthorizeConversation(profileOnion, peerOnion, cwtchConversationID, stegmsConversationID)
+func PurgeGuestMedia(profileOnion string) string {
+	return cwtchcore.PurgeGuestMedia(profileOnion)
+}
+
+func AuthorizeConversation(profileOnion string, peerOnion string, cwtchConversationID int32, stegmsConversationID string) string {
+	return cwtchcore.AuthorizeConversation(profileOnion, peerOnion, cwtchConversationID, stegmsConversationID)
 }
 
 func GetAppBusEvent() string {

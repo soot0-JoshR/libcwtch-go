@@ -6,6 +6,8 @@ import (
 	"git.openprivacy.ca/cwtch.im/libcwtch-go/features/servers"
 	"os"
 	"strconv"
+	"strings"
+	"sync"
 
 	"cwtch.im/cwtch/app"
 	"cwtch.im/cwtch/app/plugins"
@@ -35,18 +37,37 @@ type LCG_API_Handler struct {
 }
 
 type EventHandler struct {
-	app           app.Application
-	appBusQueue   event.Queue
-	profileEvents chan EventProfileEnvelope
-	api           LCG_API_Handler
+	app               app.Application
+	appBusQueue       event.Queue
+	profileEvents     chan EventProfileEnvelope
+	api               LCG_API_Handler
+	contactStateMutex sync.Mutex
+	contactStateCache map[string]connections.ConnectionState
 }
 
 // We should be reading from profile events pretty quickly, but we make this buffer fairly large...
 const profileEventsBufferSize = 512
 
 func NewEventHandler(api LCG_API_Handler) *EventHandler {
-	eh := &EventHandler{app: nil, appBusQueue: event.NewQueue(), profileEvents: make(chan EventProfileEnvelope, profileEventsBufferSize), api: api}
+	eh := &EventHandler{
+		app:               nil,
+		appBusQueue:       event.NewQueue(),
+		profileEvents:     make(chan EventProfileEnvelope, profileEventsBufferSize),
+		api:               api,
+		contactStateCache: make(map[string]connections.ConnectionState),
+	}
 	return eh
+}
+
+func (eh *EventHandler) ForgetProfileState(profileOnion string) {
+	prefix := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(profileOnion)), ".onion") + "\x00"
+	eh.contactStateMutex.Lock()
+	defer eh.contactStateMutex.Unlock()
+	for key := range eh.contactStateCache {
+		if strings.HasPrefix(key, prefix) {
+			delete(eh.contactStateCache, key)
+		}
+	}
 }
 
 func (eh *EventHandler) HandleApp(application app.Application) {
@@ -352,15 +373,52 @@ func GetProfileImage(profile peer.CwtchPeer, conversationInfo *model.Conversatio
 	return RandomProfileImage(conversationInfo.Handle)
 }
 
+func resolveConversationHandleByID(conversations []*model.Conversation, rawConversationID string) string {
+	conversationID, err := strconv.Atoi(rawConversationID)
+	if err != nil {
+		return ""
+	}
+	for _, conversation := range conversations {
+		if conversation != nil && conversation.ID == conversationID {
+			return conversation.Handle
+		}
+	}
+	return ""
+}
+
 // handleProfileEvent enriches Profile events so they are usable with out further data fetches
 func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
-	// cache of contact states to use to filter out events repeating known states
-	var contactStateCache = make(map[string]connections.ConnectionState)
-
 	if eh.app == nil {
 		log.Errorf("eh.app == nil in handleProfileEvent... this shouldnt happen?")
 	} else {
 		profile := eh.app.GetPeer(ev.Profile)
+		if profile == nil {
+			log.Errorf("profile %s is unavailable while handling %s", ev.Profile, ev.Event.EventType)
+			return ""
+		}
+		if ev.Event.Data[event.RemotePeer] == "" && ev.Event.Data[event.ConversationID] != "" {
+			conversations, err := profile.FetchConversations()
+			if err != nil {
+				log.Errorf(
+					"unable to refresh conversation identity for profile %s event %s: %v",
+					ev.Profile,
+					ev.Event.EventType,
+					err,
+				)
+			} else if handle := resolveConversationHandleByID(
+				conversations,
+				ev.Event.Data[event.ConversationID],
+			); handle != "" {
+				ev.Event.Data[event.RemotePeer] = handle
+			} else {
+				log.Errorf(
+					"unable to resolve conversation %s for profile %s event %s",
+					ev.Event.Data[event.ConversationID],
+					ev.Profile,
+					ev.Event.EventType,
+				)
+			}
+		}
 		log.Debugf("New Profile Event to Handle: %v", ev)
 		switch ev.Event.EventType {
 		case event.NewMessageFromPeer: //event.TimestampReceived, event.RemotePeer, event.Data
@@ -513,10 +571,15 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			}
 
 			// if we already know this state, suppress
-			if knownState, exists := contactStateCache[ev.Event.Data[event.RemotePeer]]; exists && cxnState == knownState {
+			cacheKey := ev.Profile + "\x00" + ev.Event.Data[event.RemotePeer]
+			eh.contactStateMutex.Lock()
+			knownState, exists := eh.contactStateCache[cacheKey]
+			if exists && cxnState == knownState {
+				eh.contactStateMutex.Unlock()
 				return ""
 			}
-			contactStateCache[ev.Event.Data[event.RemotePeer]] = cxnState
+			eh.contactStateCache[cacheKey] = cxnState
+			eh.contactStateMutex.Unlock()
 
 			if contact != nil {
 				// No enrichment needed
@@ -535,10 +598,15 @@ func (eh *EventHandler) handleProfileEvent(ev *EventProfileEnvelope) string {
 			}
 
 			// if we already know this state, suppress
-			if knownState, exists := contactStateCache[ev.Event.Data[event.RemotePeer]]; exists && cxnState == knownState {
+			cacheKey := ev.Profile + "\x00" + ev.Event.Data[event.RemotePeer]
+			eh.contactStateMutex.Lock()
+			knownState, exists := eh.contactStateCache[cacheKey]
+			if exists && cxnState == knownState {
+				eh.contactStateMutex.Unlock()
 				return ""
 			}
-			contactStateCache[ev.Event.Data[event.RemotePeer]] = cxnState
+			eh.contactStateCache[cacheKey] = cxnState
+			eh.contactStateMutex.Unlock()
 
 		case event.NewRetValMessageFromPeer:
 			// auto handled event means the setting is already done, we're just deciding if we need to tell the UI
@@ -673,6 +741,7 @@ func (eh *EventHandler) startHandlingPeer(onion string) {
 	eventBus.Subscribe(event.ManifestSaved, q)
 	eventBus.Subscribe(event.FileDownloadProgressUpdate, q)
 	eventBus.Subscribe(event.FileDownloaded, q)
+	eventBus.Subscribe(event.FileVerificationFailed, q)
 	eventBus.Subscribe(event.TokenManagerInfo, q)
 	eventBus.Subscribe(event.ProtocolEngineCreated, q)
 	go eh.forwardProfileMessages(onion, q)
@@ -756,7 +825,7 @@ func handleImagePreviews(profile peer.CwtchPeer, ev *event.Event, conversationID
 }
 
 var OnFileOfferReceived func(profileOnion string, peerOnion string, conversationID int, messageIndex int, name string, size int64, fileKey string)
-var OnFileProgressUpdated func(fileKey string, progress float64, state string)
+var OnFileProgressUpdated func(fileKey string, progress float64, state string, localPath string, errorMessage string)
 
 func (eh *EventHandler) TryNextEvent() string {
 	appChan := eh.appBusQueue.OutChan()
@@ -764,8 +833,11 @@ func (eh *EventHandler) TryNextEvent() string {
 	case e := <-appChan:
 		return eh.handleAppBusEvent(&e)
 	case ev := <-eh.profileEvents:
+		// handleProfileEvent enriches NewMessageFromPeer with ConversationID.
+		// Register file offers only after that correlation has been added.
+		handled := eh.handleProfileEvent(&ev)
 		eh.interceptProfileEvent(&ev)
-		return eh.handleProfileEvent(&ev)
+		return handled
 	default:
 		return ""
 	}
@@ -780,7 +852,21 @@ func (eh *EventHandler) interceptProfileEvent(ev *EventProfileEnvelope) {
 			var fm filesharing.OverlayMessage
 			err = json.Unmarshal([]byte(cm.Data), &fm)
 			if err == nil && OnFileOfferReceived != nil {
-				cID, _ := strconv.Atoi(ev.Event.Data[event.ConversationID])
+				cID, conversionErr := strconv.Atoi(ev.Event.Data[event.ConversationID])
+				if conversionErr != nil || cID <= 0 {
+					if eh.app != nil {
+						if profile := eh.app.GetPeer(ev.Profile); profile != nil {
+							if conversation, fetchErr := profile.FetchConversationInfo(ev.Event.Data[event.RemotePeer]); fetchErr == nil && conversation != nil {
+								cID = conversation.ID
+								ev.Event.Data[event.ConversationID] = strconv.Itoa(cID)
+							}
+						}
+					}
+				}
+				if cID <= 0 {
+					log.Errorf("Unable to correlate file offer %s with a Cwtch conversation", fm.FileKey())
+					return
+				}
 				mID, _ := strconv.Atoi(ev.Event.Data["Index"])
 				OnFileOfferReceived(ev.Profile, ev.Event.Data["RemotePeer"], cID, mID, fm.Name, int64(fm.Size), fm.FileKey())
 			}
@@ -790,12 +876,17 @@ func (eh *EventHandler) interceptProfileEvent(ev *EventProfileEnvelope) {
 		progressStr := ev.Event.Data[event.Progress]
 		progressVal, _ := strconv.ParseFloat(progressStr, 64)
 		if OnFileProgressUpdated != nil {
-			OnFileProgressUpdated(fileKey, progressVal, "downloading")
+			OnFileProgressUpdated(fileKey, progressVal, "downloading", "", "")
 		}
 	case event.FileDownloaded:
 		fileKey := ev.Event.Data[event.FileKey]
 		if OnFileProgressUpdated != nil {
-			OnFileProgressUpdated(fileKey, 1.0, "complete")
+			OnFileProgressUpdated(fileKey, 100.0, "available", ev.Event.Data[event.FilePath], "")
+		}
+	case event.ManifestError, event.FileVerificationFailed:
+		fileKey := ev.Event.Data[event.FileKey]
+		if OnFileProgressUpdated != nil {
+			OnFileProgressUpdated(fileKey, 0, "failed", "", string(ev.Event.EventType))
 		}
 	}
 }

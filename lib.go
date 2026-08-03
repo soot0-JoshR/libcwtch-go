@@ -1,6 +1,6 @@
-package cwtch
+//package cwtch
 
-//package main
+package main
 
 // //Needed to invoke C.free
 // #include <stdlib.h>
@@ -89,18 +89,29 @@ func c_StartCwtch(dir_c *C.char, len C.int, tor_c *C.char, torLen C.int) C.int {
 	return C.int(StartCwtch(applicationDirectory, torDirectory))
 }
 
+//export c_StartCwtchNoLoad
+func c_StartCwtchNoLoad(dir_c *C.char, len C.int, tor_c *C.char, torLen C.int) C.int {
+	applicationDirectory := C.GoStringN(dir_c, len)
+	torDirectory := C.GoStringN(tor_c, torLen)
+	return C.int(StartCwtchWithOptions(applicationDirectory, torDirectory, true))
+}
+
 //export c_EnsureContact
 func c_EnsureContact(profilePtr *C.char, profileLen C.int, peerPtr *C.char, peerLen C.int) *C.char {
 	profileOnionRaw := C.GoStringN(profilePtr, profileLen)
 	peerOnionRaw := C.GoStringN(peerPtr, peerLen)
 	profileOnion := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(profileOnionRaw)), ".onion")
-	if application != nil {
-		if profile := application.GetPeer(profileOnion); profile != nil {
-			return C.CString(cwtchcore.EnsureContactForProfile(profile, profileOnionRaw, peerOnionRaw))
-		}
+	if application == nil {
+		result, _ := json.Marshal(cwtchcore.EnsureContactResult{
+			Status: "error", Reason: "application_not_initialized",
+		})
+		return C.CString(string(result))
+	}
+	if profile := application.GetPeer(profileOnion); profile != nil {
+		return C.CString(cwtchcore.EnsureContactForProfile(profile, profileOnionRaw, peerOnionRaw))
 	}
 	result, _ := json.Marshal(cwtchcore.EnsureContactResult{
-		Status: "error", Reason: "application_not_initialized",
+		Status: "error", Reason: "profile_not_found",
 	})
 	return C.CString(string(result))
 }
@@ -123,9 +134,29 @@ func c_GetPeerStates() *C.char {
 	return C.CString(cwtchcore.GetPeerStates())
 }
 
+//export c_GetPeerStatesForProfile
+func c_GetPeerStatesForProfile(profilePtr *C.char, profileLen C.int) *C.char {
+	return C.CString(cwtchcore.GetPeerStatesForProfile(C.GoStringN(profilePtr, profileLen)))
+}
+
+//export c_LockProfile
+func c_LockProfile(profilePtr *C.char, profileLen C.int) *C.char {
+	return C.CString(cwtchcore.LockProfile(C.GoStringN(profilePtr, profileLen)))
+}
+
 //export c_GetConversationMap
 func c_GetConversationMap() *C.char {
 	return C.CString(cwtchcore.GetConversationMap())
+}
+
+//export c_GetConversationMapForProfile
+func c_GetConversationMapForProfile(profilePtr *C.char, profileLen C.int) *C.char {
+	return C.CString(cwtchcore.GetConversationMapForProfile(C.GoStringN(profilePtr, profileLen)))
+}
+
+//export c_GetConversationMetadataForProfile
+func c_GetConversationMetadataForProfile(profilePtr *C.char, profileLen C.int) *C.char {
+	return C.CString(cwtchcore.GetConversationMetadataForProfile(C.GoStringN(profilePtr, profileLen)))
 }
 
 // StartCwtch starts cwtch in the library and initlaizes all data structures
@@ -136,6 +167,10 @@ func c_GetConversationMap() *C.char {
 //	    message: CwtchStarted when start up is complete and app is safe to use
 //	             CwtchStartError message when start up fails (includes event.Error data field)
 func StartCwtch(appDir string, torPath string) int {
+	return StartCwtchWithOptions(appDir, torPath, false)
+}
+
+func StartCwtchWithOptions(appDir string, torPath string, noLoadProfiles bool) int {
 	if logfile := os.Getenv("LOG_FILE"); logfile != "" {
 		filelog, err := log.NewFile(log.LevelInfo, logfile)
 		if err == nil {
@@ -167,11 +202,11 @@ func StartCwtch(appDir string, torPath string) int {
 		}
 		_ = fh.Close()
 	}
-	go _startCwtch(appDir, torPath)
+	go _startCwtch(appDir, torPath, noLoadProfiles)
 	return 0
 }
 
-func _startCwtch(appDir string, torPath string) {
+func _startCwtch(appDir string, torPath string, noLoadProfiles bool) {
 	log.Infof("application: %v eventHandler: %v", application, eventHandler)
 
 	if application != nil {
@@ -223,6 +258,12 @@ func _startCwtch(appDir string, torPath string) {
 
 	// Allow the user of a custom torrc
 	settings := utils.ReadGlobalSettings()
+	if settings.Experiments == nil {
+		settings.Experiments = make(map[string]bool)
+	}
+	settings.ExperimentsEnabled = true
+	settings.Experiments[constants2.FileSharingExperiment] = true
+	utils.WriteGlobalSettings(*settings)
 	globalAppDir = appDir
 	globalTorPath = torPath
 	globalACN = connectivity.NewProxyACN(buildACN(*settings, globalTorPath, globalAppDir))
@@ -233,14 +274,16 @@ func _startCwtch(appDir string, torPath string) {
 
 	cwtchcore.Application = application
 	cwtchcore.EventHandler = eventHandler
-	cwtchcore.GlobalACN = globalACN
+	cwtchcore.GlobalACN = &globalACN
 
 	// Settings may have changed...
 	settings = utils.ReadGlobalSettings()
 	settingsJson, _ := json.Marshal(settings)
 
-	application.LoadProfiles(constants.DefactoPasswordForUnencryptedProfiles)
-	LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
+	if !noLoadProfiles {
+		application.LoadProfiles(constants.DefactoPasswordForUnencryptedProfiles)
+		LoadServers(constants.DefactoPasswordForUnencryptedProfiles)
+	}
 	serversHandler, err := servers.ExperimentGate(utils.ReadGlobalSettings().Experiments)
 	if err == nil {
 		serversHandler.Enable()
@@ -1449,8 +1492,8 @@ func CreateEphemeralProfile(nick, pass string) {
 	}
 
 	application.CreateEphemeralPeer(nick, pass, map[attr.ZonedPath]string{
-		attr.ProfileZone.ConstructZonedPath(constants2.Tag):           tagVal,
-		attr.ProfileZone.ConstructZonedPath(constants.PeerAutostart):  autostartVal,
+		attr.ProfileZone.ConstructZonedPath(constants2.Tag):          tagVal,
+		attr.ProfileZone.ConstructZonedPath(constants.PeerAutostart): autostartVal,
 	})
 }
 
@@ -1729,7 +1772,7 @@ func GetDebugInfo() string {
 }
 
 // Leave as is, needed by ffi
-//func main() {}
+func main() {}
 
 //export c_SignChallenge
 func c_SignChallenge(profile_ptr *C.char, profile_len C.int, challenge_ptr *C.char, challenge_len C.int) *C.char {
