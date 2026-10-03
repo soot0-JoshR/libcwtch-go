@@ -371,6 +371,37 @@ func NewProfileWithEncryptedStorage(name string, cps *CwtchProfileStorage) Cwtch
 	return cp
 }
 
+var saveHistoryPath = attr.LocalScope.ConstructScopedZonedPath(
+	attr.ProfileZone.ConstructZonedPath(event.SaveHistoryKey),
+)
+
+func shouldPreserveHistoryOnStegmsLoad(conversation *model.Conversation) bool {
+	if conversation == nil || conversation.IsGroup() || conversation.IsServer() {
+		return false
+	}
+	saveHistory, _ := conversation.GetAttribute(attr.LocalScope, attr.ProfileZone, event.SaveHistoryKey)
+	return saveHistory != event.DeleteHistoryConfirmed
+}
+
+// preserveDefaultPeerHistory migrates Cwtch's default-delete policy to the
+// persistent-history policy used by StegMS before the startup purge runs. An
+// explicit user choice to delete history remains authoritative.
+func preserveDefaultPeerHistory(cps *CwtchProfileStorage) error {
+	conversations, err := cps.FetchConversations()
+	if err != nil {
+		return err
+	}
+	for _, conversation := range conversations {
+		if !shouldPreserveHistoryOnStegmsLoad(conversation) {
+			continue
+		}
+		if err := cps.SetConversationAttribute(conversation.ID, saveHistoryPath, event.SaveHistoryConfirmed); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // FromEncryptedStorage loads an existing Profile from Encrypted Storage
 func FromEncryptedStorage(cps *CwtchProfileStorage) CwtchPeer {
 	cp := new(cwtchPeer)
@@ -382,7 +413,13 @@ func FromEncryptedStorage(cps *CwtchProfileStorage) CwtchPeer {
 	// database directly is tolerable
 	// Clean up anything that wasn't cleaned up on shutdown
 	// TODO ideally this shouldn't need to be done but the UI sometimes doesn't shut down cleanly
-	cp.storage.PurgeNonSavedMessages()
+	if err := preserveDefaultPeerHistory(cp.storage); err != nil {
+		// Retaining too much on a storage error is safer than deleting history
+		// before StegMS can establish the intended conversation policy.
+		log.Errorf("could not migrate peer history policy before startup purge: %v", err)
+	} else {
+		cp.storage.PurgeNonSavedMessages()
+	}
 	return cp
 }
 

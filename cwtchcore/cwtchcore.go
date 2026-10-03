@@ -3,6 +3,7 @@ package cwtchcore
 import (
 	"crypto/sha256"
 	"cwtch.im/cwtch/app"
+	"cwtch.im/cwtch/event"
 	"cwtch.im/cwtch/functionality/filesharing"
 	"cwtch.im/cwtch/model"
 	"cwtch.im/cwtch/model/attr"
@@ -203,6 +204,14 @@ func EnsureContactForProfile(profile peer.CwtchPeer, profileOnionRaw string, pee
 			log.Errorf("EnsureContact accept error: %v", err)
 			return ensureContactJSON(EnsureContactResult{Status: "error", Reason: "storage_error"})
 		}
+		if err := profile.SetConversationAttribute(
+			conversation.ID,
+			attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(event.SaveHistoryKey)),
+			event.SaveHistoryConfirmed,
+		); err != nil {
+			log.Errorf("EnsureContact save history error: %v", err)
+			return ensureContactJSON(EnsureContactResult{Status: "error", Reason: "storage_error"})
+		}
 		return ensureContactJSON(EnsureContactResult{
 			Status: "existing", ConversationID: conversation.ID,
 		})
@@ -220,11 +229,27 @@ func EnsureContactForProfile(profile peer.CwtchPeer, profileOnionRaw string, pee
 				log.Errorf("EnsureContact concurrent accept error: %v", acceptErr)
 				return ensureContactJSON(EnsureContactResult{Status: "error", Reason: "storage_error"})
 			}
+			if saveErr := profile.SetConversationAttribute(
+				conversation.ID,
+				attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(event.SaveHistoryKey)),
+				event.SaveHistoryConfirmed,
+			); saveErr != nil {
+				log.Errorf("EnsureContact concurrent save history error: %v", saveErr)
+				return ensureContactJSON(EnsureContactResult{Status: "error", Reason: "storage_error"})
+			}
 			return ensureContactJSON(EnsureContactResult{
 				Status: "existing", ConversationID: conversation.ID,
 			})
 		}
 		log.Errorf("EnsureContact storage error: %v", err)
+		return ensureContactJSON(EnsureContactResult{Status: "error", Reason: "storage_error"})
+	}
+	if err := profile.SetConversationAttribute(
+		conversationID,
+		attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(event.SaveHistoryKey)),
+		event.SaveHistoryConfirmed,
+	); err != nil {
+		log.Errorf("EnsureContact new save history error: %v", err)
 		return ensureContactJSON(EnsureContactResult{Status: "error", Reason: "storage_error"})
 	}
 	// NewContactConversation persists the contact but does not initiate a
@@ -1144,6 +1169,13 @@ func AuthorizeConversation(profileOnion string, peerOnion string, cwtchConversat
 	}
 	if err := profile.AcceptConversation(int(cwtchConversationID)); err != nil {
 		return `{"status":"error","reason":"conversation_accept_failed"}`
+	}
+	if err := profile.SetConversationAttribute(
+		int(cwtchConversationID),
+		attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(event.SaveHistoryKey)),
+		event.SaveHistoryConfirmed,
+	); err != nil {
+		return `{"status":"error","reason":"conversation_history_failed"}`
 	}
 	authMutex.Lock()
 	// Mandatory safeguard: Key by both profile and peer to prevent cross-profile collisions
