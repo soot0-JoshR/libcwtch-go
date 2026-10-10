@@ -137,6 +137,7 @@ type CwtchPeer interface {
 	Export(file string) error
 	ExportWithPassword(file string, currentPassword string, backupPassword string) error
 	HasPassword(blankPassword string) bool
+	RestorePasswordAsItWas(backupPassword string, blankPassword string) (bool, error)
 	PromoteToEncryptedStore(profileDirectory string, password string) error
 	IsMemoryStore() bool
 	Delete()

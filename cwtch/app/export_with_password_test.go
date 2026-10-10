@@ -69,16 +69,18 @@ func TestExportWithPasswordRoundTrip(t *testing.T) {
 		t.Fatalf("restored a different identity: %s, want %s", restored.GetOnion(), onion)
 	}
 
-	// Restoring through the app and re-keying to a blank password makes the
-	// identity load at startup like any password-less one.
+	// Restoring through the app brings the password-less identity back without
+	// a password, so it loads at startup like the others.
 	restoreDir := t.TempDir()
 	target := NewApp(connectivity.NewLocalACN(), restoreDir)
 	imported, err := target.ImportProfile(backup, backupPassword)
 	if err != nil || imported == nil {
 		t.Fatalf("app import failed: %v", err)
 	}
-	if err := imported.ChangePassword(backupPassword, "", ""); err != nil {
-		t.Fatalf("re-keying the restored profile failed: %v", err)
+	// The identity had no password, so restoring returns it to none.
+	removed, err := imported.RestorePasswordAsItWas(backupPassword, "")
+	if err != nil || !removed {
+		t.Fatalf("restoring a password-less identity kept a password: removed=%v err=%v", removed, err)
 	}
 	time.Sleep(200 * time.Millisecond)
 	target.Shutdown()
@@ -118,4 +120,50 @@ func TestExportUnderTheIdentitysOwnPassword(t *testing.T) {
 		t.Fatal("a password-less identity reported a password")
 	}
 	blank.Shutdown()
+}
+
+// A backup under the identity's own password, and one made by plain Cwtch
+// Export (as Vanilla Cwtch does), restore with that password kept.
+func TestRestoreKeepsTheIdentitysOwnPassword(t *testing.T) {
+	const own = "identity-password"
+	for _, plain := range []bool{false, true} {
+		dir := t.TempDir()
+		source := NewApp(connectivity.NewLocalACN(), dir)
+		source.CreatePeer("keep-probe", own, map[attr.ZonedPath]string{})
+		onion := source.ListProfiles()[0]
+		backup := filepath.Join(t.TempDir(), "identity.tar.gz")
+		var err error
+		if plain {
+			err = source.GetPeer(onion).Export(backup)
+		} else {
+			err = source.GetPeer(onion).ExportWithPassword(backup, own, own)
+		}
+		if err != nil {
+			t.Fatalf("export (plain=%v) failed: %v", plain, err)
+		}
+		source.Shutdown()
+
+		restoreDir := t.TempDir()
+		target := NewApp(connectivity.NewLocalACN(), restoreDir)
+		imported, err := target.ImportProfile(backup, own)
+		if err != nil {
+			t.Fatalf("import (plain=%v) failed: %v", plain, err)
+		}
+		if removed, err := imported.RestorePasswordAsItWas(own, ""); removed || err != nil {
+			t.Fatalf("restore (plain=%v) removed the identity's own password: %v %v", plain, removed, err)
+		}
+		time.Sleep(200 * time.Millisecond)
+		target.Shutdown()
+
+		again := NewApp(connectivity.NewLocalACN(), restoreDir)
+		again.LoadProfiles("")
+		if got := again.ListProfiles(); len(got) != 0 {
+			t.Fatalf("restore (plain=%v): a password-protected identity loaded without its password", plain)
+		}
+		again.LoadProfiles(own)
+		if got := again.ListProfiles(); len(got) != 1 || got[0] != onion {
+			t.Fatalf("restore (plain=%v): the identity does not load with its password: %v", plain, got)
+		}
+		again.Shutdown()
+	}
 }

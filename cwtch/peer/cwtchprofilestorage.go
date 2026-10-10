@@ -948,7 +948,10 @@ func (cps *CwtchProfileStorage) Export(filename string) error {
 // derived from a backup password with the same salt opens the copy -- and
 // Cwtch's ImportProfile, given that password, accepts it.
 // StegMS addition (2026-10-09): identity backup with a chosen password.
-func (cps *CwtchProfileStorage) ExportWithKey(filename string, newKey [32]byte) error {
+// markers are profile key-value attributes written into the copy only (the
+// live profile is unchanged), e.g. how the backup's password relates to the
+// identity's, so a restore can bring the identity back as it was.
+func (cps *CwtchProfileStorage) ExportWithKey(filename string, newKey [32]byte, markers map[string]string) error {
 	if cps.IsMemoryStore() {
 		return errors.New("a memory-only profile has no storage to export")
 	}
@@ -999,6 +1002,13 @@ func (cps *CwtchProfileStorage) ExportWithKey(filename string, newKey [32]byte) 
 		}
 		if _, err := conn.ExecContext(ctx, `SELECT sqlcipher_export('backup');`); err != nil {
 			return fmt.Errorf("could not re-encrypt the profile copy: %w", err)
+		}
+		for name, value := range markers {
+			if _, err := conn.ExecContext(ctx,
+				`insert or replace into backup.profile_kv(KeyType, KeyName, KeyValue) values(?,?,?);`,
+				string(TypeAttribute), name, []byte(value)); err != nil {
+				return fmt.Errorf("could not mark the profile copy: %w", err)
+			}
 		}
 		return nil
 	}()

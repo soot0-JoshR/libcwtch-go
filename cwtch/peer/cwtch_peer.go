@@ -131,7 +131,40 @@ func (cp *cwtchPeer) ExportWithPassword(file string, currentPassword string, bac
 	if err != nil {
 		return err
 	}
-	return cp.storage.ExportWithKey(file, createKey(backupPassword, salt))
+	kind := BackupPasswordSeparate
+	if backupPassword == currentPassword {
+		kind = BackupPasswordIdentity
+	}
+	marker := attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(BackupPasswordAttribute)).ToString()
+	return cp.storage.ExportWithKey(file, createKey(backupPassword, salt), map[string]string{marker: kind})
+}
+
+// How a StegMS backup's password relates to the identity it was made from,
+// recorded in the backup itself (StegMS, 2026-10-10).
+const (
+	BackupPasswordAttribute = "stegms_backup_password"
+	// The identity had no password; the backup password protected the file only.
+	BackupPasswordSeparate = "separate"
+	// The backup is under the identity's own password.
+	BackupPasswordIdentity = "identity"
+)
+
+// RestorePasswordAsItWas returns a just-restored identity to the password it
+// had when backed up: a backup made under a separate password (the identity
+// had none) is re-keyed to blankPassword, the platform's "no password"; one
+// under the identity's own password, or without a marker (e.g. from Vanilla
+// Cwtch, whose backups are always under the identity's password), keeps it.
+// The marker is cleared either way. Reports whether it re-keyed.
+func (cp *cwtchPeer) RestorePasswordAsItWas(backupPassword string, blankPassword string) (bool, error) {
+	kind, _ := cp.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, BackupPasswordAttribute)
+	cp.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, BackupPasswordAttribute, "")
+	if kind != BackupPasswordSeparate || backupPassword == blankPassword {
+		return false, nil
+	}
+	if err := cp.ChangePassword(backupPassword, blankPassword, blankPassword); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (cp *cwtchPeer) PromoteToEncryptedStore(profileDirectory string, password string) error {

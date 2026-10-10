@@ -500,12 +500,13 @@ func ExportProfileWithPassword(profileOnion string, file string, currentPassword
 	return string(bytes)
 }
 
-// ImportProfileWithNewPassword restores a Cwtch backup opened with
-// backupPassword, then sets the restored profile's password on this device to
-// newPassword (often blank, so it loads at startup like other password-less
-// identities). Without that it would keep the backup password and stay hidden
-// after the next restart until loaded with it. StegMS addition (2026-10-09).
-func ImportProfileWithNewPassword(exportedCwtchFile string, backupPassword string, newPassword string) string {
+// RestoreProfileBackup restores a Cwtch backup opened with backupPassword and
+// returns the identity to the password it had when backed up (see
+// peer.RestorePasswordAsItWas): no password -> blankPassword, the caller's
+// "no password"; its own password -> kept. JSON: {"status":"imported",
+// "onion","passwordRemoved":"true"|"false"} or an error (a failed re-key
+// still reports the import, with "reason"). StegMS addition (2026-10-10).
+func RestoreProfileBackup(exportedCwtchFile string, backupPassword string, blankPassword string) string {
 	stateMutex.RLock()
 	defer stateMutex.RUnlock()
 	encode := func(result map[string]string) string {
@@ -523,13 +524,12 @@ func ImportProfileWithNewPassword(exportedCwtchFile string, backupPassword strin
 		}
 		return encode(map[string]string{"status": "error", "reason": reason})
 	}
-	if newPassword != backupPassword {
-		if err := profile.ChangePassword(backupPassword, newPassword, newPassword); err != nil {
-			// Imported, but still under the backup password.
-			return encode(map[string]string{"status": "imported", "onion": profile.GetOnion(), "passwordChanged": "false", "reason": err.Error()})
-		}
+	removed, err := profile.RestorePasswordAsItWas(backupPassword, blankPassword)
+	result := map[string]string{"status": "imported", "onion": profile.GetOnion(), "passwordRemoved": fmt.Sprint(removed)}
+	if err != nil {
+		result["reason"] = err.Error()
 	}
-	return encode(map[string]string{"status": "imported", "onion": profile.GetOnion(), "passwordChanged": "true"})
+	return encode(result)
 }
 
 func ImportProfile(exportedCwtchFile string, pass string) string {

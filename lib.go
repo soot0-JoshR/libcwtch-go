@@ -1560,18 +1560,18 @@ func ExportProfileWithPassword(profileOnion string, file string, currentPassword
 	return string(bytes)
 }
 
-//export c_ImportProfileWithNewPassword
-func c_ImportProfileWithNewPassword(file_ptr *C.char, file_len C.int, backup_ptr *C.char, backup_len C.int, new_ptr *C.char, new_len C.int) *C.char {
-	return C.CString(ImportProfileWithNewPassword(
+//export c_RestoreProfileBackup
+func c_RestoreProfileBackup(file_ptr *C.char, file_len C.int, backup_ptr *C.char, backup_len C.int, blank_ptr *C.char, blank_len C.int) *C.char {
+	return C.CString(RestoreProfileBackup(
 		C.GoStringN(file_ptr, file_len),
 		C.GoStringN(backup_ptr, backup_len),
-		C.GoStringN(new_ptr, new_len),
+		C.GoStringN(blank_ptr, blank_len),
 	))
 }
 
-// ImportProfileWithNewPassword restores a backup and sets the restored
-// profile's password on this device (StegMS, 2026-10-09). JSON result.
-func ImportProfileWithNewPassword(exportedCwtchFile string, backupPassword string, newPassword string) string {
+// RestoreProfileBackup restores a backup as the identity was (StegMS,
+// 2026-10-10); blankPassword is the caller's "no password". JSON result.
+func RestoreProfileBackup(exportedCwtchFile string, backupPassword string, blankPassword string) string {
 	encode := func(result map[string]string) string {
 		bytes, _ := json.Marshal(result)
 		return string(bytes)
@@ -1587,12 +1587,12 @@ func ImportProfileWithNewPassword(exportedCwtchFile string, backupPassword strin
 		}
 		return encode(map[string]string{"status": "error", "reason": reason})
 	}
-	if newPassword != backupPassword {
-		if err := profile.ChangePassword(backupPassword, newPassword, newPassword); err != nil {
-			return encode(map[string]string{"status": "imported", "onion": profile.GetOnion(), "passwordChanged": "false", "reason": err.Error()})
-		}
+	removed, err := profile.RestorePasswordAsItWas(backupPassword, blankPassword)
+	result := map[string]string{"status": "imported", "onion": profile.GetOnion(), "passwordRemoved": fmt.Sprint(removed)}
+	if err != nil {
+		result["reason"] = err.Error()
 	}
-	return encode(map[string]string{"status": "imported", "onion": profile.GetOnion(), "passwordChanged": "true"})
+	return encode(result)
 }
 
 //export c_ImportProfile
