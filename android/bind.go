@@ -160,6 +160,12 @@ func ExportProfile(profileOnion string, file string, currentPassword string, bac
 	return cwtchcore.ExportProfileWithPassword(profileOnion, file, currentPassword, backupPassword)
 }
 
+// ImportProfileWithNewPassword restores an identity backup and sets its
+// password on this device.
+func ImportProfileWithNewPassword(file string, backupPassword string, newPassword string) string {
+	return cwtchcore.ImportProfileWithNewPassword(file, backupPassword, newPassword)
+}
+
 func ImportProfile(file string, password string) string {
 	return cwtchcore.ImportProfile(file, password)
 }

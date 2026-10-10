@@ -482,6 +482,38 @@ func ExportProfileWithPassword(profileOnion string, file string, currentPassword
 	return string(bytes)
 }
 
+// ImportProfileWithNewPassword restores a Cwtch backup opened with
+// backupPassword, then sets the restored profile's password on this device to
+// newPassword (often blank, so it loads at startup like other password-less
+// identities). Without that it would keep the backup password and stay hidden
+// after the next restart until loaded with it. StegMS addition (2026-10-09).
+func ImportProfileWithNewPassword(exportedCwtchFile string, backupPassword string, newPassword string) string {
+	stateMutex.RLock()
+	defer stateMutex.RUnlock()
+	encode := func(result map[string]string) string {
+		bytes, _ := json.Marshal(result)
+		return string(bytes)
+	}
+	if Application == nil {
+		return encode(map[string]string{"status": "error", "reason": "application_not_initialized"})
+	}
+	profile, err := Application.ImportProfile(exportedCwtchFile, backupPassword)
+	if err != nil || profile == nil {
+		reason := "import_failed"
+		if err != nil {
+			reason = err.Error()
+		}
+		return encode(map[string]string{"status": "error", "reason": reason})
+	}
+	if newPassword != backupPassword {
+		if err := profile.ChangePassword(backupPassword, newPassword, newPassword); err != nil {
+			// Imported, but still under the backup password.
+			return encode(map[string]string{"status": "imported", "onion": profile.GetOnion(), "passwordChanged": "false", "reason": err.Error()})
+		}
+	}
+	return encode(map[string]string{"status": "imported", "onion": profile.GetOnion(), "passwordChanged": "true"})
+}
+
 func ImportProfile(exportedCwtchFile string, pass string) string {
 	_, err := Application.ImportProfile(exportedCwtchFile, pass)
 	if err == nil {

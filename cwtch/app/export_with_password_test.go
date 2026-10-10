@@ -62,4 +62,24 @@ func TestExportWithPasswordRoundTrip(t *testing.T) {
 	if restored.GetOnion() != onion {
 		t.Fatalf("restored a different identity: %s, want %s", restored.GetOnion(), onion)
 	}
+
+	// Restoring through the app and re-keying to a blank password makes the
+	// identity load at startup like any password-less one.
+	restoreDir := t.TempDir()
+	target := NewApp(connectivity.NewLocalACN(), restoreDir)
+	imported, err := target.ImportProfile(backup, backupPassword)
+	if err != nil || imported == nil {
+		t.Fatalf("app import failed: %v", err)
+	}
+	if err := imported.ChangePassword(backupPassword, "", ""); err != nil {
+		t.Fatalf("re-keying the restored profile failed: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	target.Shutdown()
+	again := NewApp(connectivity.NewLocalACN(), restoreDir)
+	again.LoadProfiles("")
+	if got := again.ListProfiles(); len(got) != 1 || got[0] != onion {
+		t.Fatalf("the restored identity does not load with a blank password: %v", got)
+	}
+	again.Shutdown()
 }

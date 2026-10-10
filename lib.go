@@ -1540,6 +1540,41 @@ func ExportProfileWithPassword(profileOnion string, file string, currentPassword
 	return string(bytes)
 }
 
+//export c_ImportProfileWithNewPassword
+func c_ImportProfileWithNewPassword(file_ptr *C.char, file_len C.int, backup_ptr *C.char, backup_len C.int, new_ptr *C.char, new_len C.int) *C.char {
+	return C.CString(ImportProfileWithNewPassword(
+		C.GoStringN(file_ptr, file_len),
+		C.GoStringN(backup_ptr, backup_len),
+		C.GoStringN(new_ptr, new_len),
+	))
+}
+
+// ImportProfileWithNewPassword restores a backup and sets the restored
+// profile's password on this device (StegMS, 2026-10-09). JSON result.
+func ImportProfileWithNewPassword(exportedCwtchFile string, backupPassword string, newPassword string) string {
+	encode := func(result map[string]string) string {
+		bytes, _ := json.Marshal(result)
+		return string(bytes)
+	}
+	if application == nil {
+		return encode(map[string]string{"status": "error", "reason": "application_not_initialized"})
+	}
+	profile, err := application.ImportProfile(exportedCwtchFile, backupPassword)
+	if err != nil || profile == nil {
+		reason := "import_failed"
+		if err != nil {
+			reason = err.Error()
+		}
+		return encode(map[string]string{"status": "error", "reason": reason})
+	}
+	if newPassword != backupPassword {
+		if err := profile.ChangePassword(backupPassword, newPassword, newPassword); err != nil {
+			return encode(map[string]string{"status": "imported", "onion": profile.GetOnion(), "passwordChanged": "false", "reason": err.Error()})
+		}
+	}
+	return encode(map[string]string{"status": "imported", "onion": profile.GetOnion(), "passwordChanged": "true"})
+}
+
 //export c_ImportProfile
 func c_ImportProfile(file_ptr *C.char, file_len C.int, passwordPtr *C.char, passwordLen C.int) *C.char {
 	password := C.GoStringN(passwordPtr, passwordLen)
