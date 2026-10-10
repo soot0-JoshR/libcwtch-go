@@ -34,8 +34,14 @@ func TestExportWithPasswordRoundTrip(t *testing.T) {
 	if err := profile.ExportWithPassword(backup, "not the password", backupPassword); err == nil {
 		t.Fatal("the wrong current password was accepted")
 	}
+	// The system temp directory is not writable by apps on Android, so the
+	// export must not depend on it.
+	t.Setenv("TMPDIR", filepath.Join(dir, "not-writable-does-not-exist"))
 	if err := profile.ExportWithPassword(backup, "", backupPassword); err != nil {
 		t.Fatalf("export failed: %v", err)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(dir, "cwtch-export-*")); len(leftovers) != 0 {
+		t.Fatalf("the temporary export copy was left behind: %v", leftovers)
 	}
 	time.Sleep(200 * time.Millisecond)
 	source.Shutdown()

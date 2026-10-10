@@ -952,7 +952,11 @@ func (cps *CwtchProfileStorage) ExportWithKey(filename string, newKey [32]byte) 
 	if cps.IsMemoryStore() {
 		return errors.New("a memory-only profile has no storage to export")
 	}
-	tempRoot, err := os.MkdirTemp("", "cwtch-export-")
+	// The re-keyed copy is made in Cwtch's own data directory (the parent of
+	// "profiles"), which the app can always write: the system temp directory
+	// is not writable by apps on Android. A leftover after a crash has no SALT
+	// at the top level, so LoadProfiles skips it.
+	tempRoot, err := os.MkdirTemp(filepath.Dir(filepath.Dir(cps.ProfileDirectory)), "cwtch-export-")
 	if err != nil {
 		return fmt.Errorf("could not create a temporary export directory: %w", err)
 	}
