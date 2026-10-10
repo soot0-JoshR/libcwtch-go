@@ -83,3 +83,33 @@ func TestExportWithPasswordRoundTrip(t *testing.T) {
 	}
 	again.Shutdown()
 }
+
+// An identity with its own password reports it, and is backed up under that
+// same password regardless of its length.
+func TestExportUnderTheIdentitysOwnPassword(t *testing.T) {
+	const own = "short-pw"
+	dir := t.TempDir()
+	source := NewApp(connectivity.NewLocalACN(), dir)
+	source.CreatePeer("protected-probe", own, map[attr.ZonedPath]string{})
+	onion := source.ListProfiles()[0]
+	profile := source.GetPeer(onion)
+	if !profile.HasPassword("") {
+		t.Fatal("a password-protected identity reported no password")
+	}
+	backup := filepath.Join(t.TempDir(), "identity.tar.gz")
+	if err := profile.ExportWithPassword(backup, own, own); err != nil {
+		t.Fatalf("export under the identity's own password failed: %v", err)
+	}
+	source.Shutdown()
+	restored, err := peer.ImportProfile(backup, filepath.Join(t.TempDir(), "profiles"), own)
+	if err != nil || restored.GetOnion() != onion {
+		t.Fatalf("the backup did not restore with the identity's password: %v", err)
+	}
+
+	blank := NewApp(connectivity.NewLocalACN(), t.TempDir())
+	blank.CreatePeer("open-probe", "", map[attr.ZonedPath]string{})
+	if blank.GetPeer(blank.ListProfiles()[0]).HasPassword("") {
+		t.Fatal("a password-less identity reported a password")
+	}
+	blank.Shutdown()
+}

@@ -463,6 +463,24 @@ func PromoteEphemeralProfile(onion string, password string) error {
 	return Application.PromoteEphemeralProfile(onion, password)
 }
 
+// ProfileHasPassword reports, as JSON {"status":"ok","hasPassword":bool},
+// whether a loaded profile has a password other than blankPassword (the
+// caller's stand-in for "none"). StegMS addition (2026-10-10).
+func ProfileHasPassword(profileOnion string, blankPassword string) string {
+	stateMutex.RLock()
+	defer stateMutex.RUnlock()
+	result := map[string]interface{}{"status": "ok"}
+	if Application == nil {
+		result = map[string]interface{}{"status": "error", "reason": "application_not_initialized"}
+	} else if profile := Application.GetPeer(normalizeOnion(profileOnion)); profile == nil {
+		result = map[string]interface{}{"status": "error", "reason": "profile_not_found"}
+	} else {
+		result["hasPassword"] = profile.HasPassword(blankPassword)
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
+}
+
 // ExportProfileWithPassword writes a standard Cwtch backup of a loaded profile,
 // encrypted with backupPassword, after checking its current password. The
 // result is JSON: {"status":"exported"} or {"status":"error","reason":...}.

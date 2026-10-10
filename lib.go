@@ -1515,6 +1515,26 @@ func PromoteEphemeralProfile(onion string, pass string) error {
 	return application.PromoteEphemeralProfile(onion, pass)
 }
 
+//export c_ProfileHasPassword
+func c_ProfileHasPassword(profile_ptr *C.char, profile_len C.int, blank_ptr *C.char, blank_len C.int) *C.char {
+	return C.CString(ProfileHasPassword(C.GoStringN(profile_ptr, profile_len), C.GoStringN(blank_ptr, blank_len)))
+}
+
+// ProfileHasPassword reports whether a loaded profile has a password other than
+// blankPassword (StegMS, 2026-10-10). JSON {"status":"ok","hasPassword":bool}.
+func ProfileHasPassword(profileOnion string, blankPassword string) string {
+	result := map[string]interface{}{"status": "ok"}
+	if application == nil {
+		result = map[string]interface{}{"status": "error", "reason": "application_not_initialized"}
+	} else if profile := application.GetPeer(profileOnion); profile == nil {
+		result = map[string]interface{}{"status": "error", "reason": "profile_not_found"}
+	} else {
+		result["hasPassword"] = profile.HasPassword(blankPassword)
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
+}
+
 //export c_ExportProfileWithPassword
 func c_ExportProfileWithPassword(profile_ptr *C.char, profile_len C.int, file_ptr *C.char, file_len C.int, current_ptr *C.char, current_len C.int, backup_ptr *C.char, backup_len C.int) *C.char {
 	return C.CString(ExportProfileWithPassword(

@@ -155,6 +155,11 @@ func PromoteEphemeralProfile(profileOnion string, password string) string {
 	return `{"status":"ok"}`
 }
 
+// ProfileHasPassword reports whether a loaded profile has a password ("" = none).
+func ProfileHasPassword(profileOnion string) string {
+	return cwtchcore.ProfileHasPassword(profileOnion, "")
+}
+
 // ExportProfile writes an identity backup encrypted with backupPassword.
 func ExportProfile(profileOnion string, file string, currentPassword string, backupPassword string) string {
 	return cwtchcore.ExportProfileWithPassword(profileOnion, file, currentPassword, backupPassword)

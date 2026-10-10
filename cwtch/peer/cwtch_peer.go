@@ -98,12 +98,25 @@ func (cp *cwtchPeer) Export(file string) error {
 // rounds of PBKDF2, so the password carries the protection.
 const MinBackupPasswordLength = 12
 
+// HasPassword reports whether the profile is protected by a password other
+// than blankPassword (the platform's stand-in for "no password"). A memory-only
+// profile has none. StegMS addition (2026-10-10).
+func (cp *cwtchPeer) HasPassword(blankPassword string) bool {
+	if cp.IsMemoryStore() {
+		return false
+	}
+	return !cp.CheckPassword(blankPassword)
+}
+
 // ExportWithPassword writes a standard Cwtch backup encrypted with
 // backupPassword, after checking the profile's current password. The live
 // profile keeps its own password; importing the backup (here or in Vanilla
 // Cwtch) takes backupPassword. StegMS addition (2026-10-09).
 func (cp *cwtchPeer) ExportWithPassword(file string, currentPassword string, backupPassword string) error {
-	if len(backupPassword) < MinBackupPasswordLength {
+	// A separate backup password must meet the minimum. An identity that has
+	// its own password is backed up under that same password, whatever its
+	// length: the backup is then exactly as protected as the identity.
+	if backupPassword != currentPassword && len(backupPassword) < MinBackupPasswordLength {
 		return fmt.Errorf("the backup password must be at least %d characters", MinBackupPasswordLength)
 	}
 	if cp.IsMemoryStore() {
