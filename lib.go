@@ -1515,6 +1515,31 @@ func PromoteEphemeralProfile(onion string, pass string) error {
 	return application.PromoteEphemeralProfile(onion, pass)
 }
 
+//export c_ExportProfileWithPassword
+func c_ExportProfileWithPassword(profile_ptr *C.char, profile_len C.int, file_ptr *C.char, file_len C.int, current_ptr *C.char, current_len C.int, backup_ptr *C.char, backup_len C.int) *C.char {
+	return C.CString(ExportProfileWithPassword(
+		C.GoStringN(profile_ptr, profile_len),
+		C.GoStringN(file_ptr, file_len),
+		C.GoStringN(current_ptr, current_len),
+		C.GoStringN(backup_ptr, backup_len),
+	))
+}
+
+// ExportProfileWithPassword writes an identity backup encrypted with
+// backupPassword (StegMS, 2026-10-09). JSON result, as cwtchcore's.
+func ExportProfileWithPassword(profileOnion string, file string, currentPassword string, backupPassword string) string {
+	result := map[string]string{"status": "exported"}
+	if application == nil {
+		result = map[string]string{"status": "error", "reason": "application_not_initialized"}
+	} else if profile := application.GetPeer(profileOnion); profile == nil {
+		result = map[string]string{"status": "error", "reason": "profile_not_found"}
+	} else if err := profile.ExportWithPassword(file, currentPassword, backupPassword); err != nil {
+		result = map[string]string{"status": "error", "reason": err.Error()}
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
+}
+
 //export c_ImportProfile
 func c_ImportProfile(file_ptr *C.char, file_len C.int, passwordPtr *C.char, passwordLen C.int) *C.char {
 	password := C.GoStringN(passwordPtr, passwordLen)

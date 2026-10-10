@@ -155,6 +155,11 @@ func PromoteEphemeralProfile(profileOnion string, password string) string {
 	return `{"status":"ok"}`
 }
 
+// ExportProfile writes an identity backup encrypted with backupPassword.
+func ExportProfile(profileOnion string, file string, currentPassword string, backupPassword string) string {
+	return cwtchcore.ExportProfileWithPassword(profileOnion, file, currentPassword, backupPassword)
+}
+
 func ImportProfile(file string, password string) string {
 	return cwtchcore.ImportProfile(file, password)
 }

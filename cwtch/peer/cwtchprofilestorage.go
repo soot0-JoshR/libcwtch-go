@@ -3,6 +3,7 @@ package peer
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"cwtch.im/cwtch/event"
 	"cwtch.im/cwtch/model"
 	"cwtch.im/cwtch/model/attr"
@@ -935,6 +936,86 @@ func (cps *CwtchProfileStorage) Export(filename string) error {
 	err = addFileToTarWriter(profilePath, profileVersion, tarWriter)
 	if err != nil {
 		return fmt.Errorf("could not add file '%s', to tarball, got error '%s'", profileDB, err.Error())
+	}
+	return nil
+}
+
+// ExportWithKey writes a standard Cwtch backup (the same tar.gz layout as
+// Export) whose database is encrypted with newKey instead of the live key. It
+// re-encrypts a copy with SQLCipher's sqlcipher_export through a single
+// connection of the open database, so the copy is consistent and the live
+// profile keeps its own password. The salt is the profile's own, so a key
+// derived from a backup password with the same salt opens the copy -- and
+// Cwtch's ImportProfile, given that password, accepts it.
+// StegMS addition (2026-10-09): identity backup with a chosen password.
+func (cps *CwtchProfileStorage) ExportWithKey(filename string, newKey [32]byte) error {
+	if cps.IsMemoryStore() {
+		return errors.New("a memory-only profile has no storage to export")
+	}
+	tempRoot, err := os.MkdirTemp("", "cwtch-export-")
+	if err != nil {
+		return fmt.Errorf("could not create a temporary export directory: %w", err)
+	}
+	defer os.RemoveAll(tempRoot)
+
+	profilePath := filepath.Base(cps.ProfileDirectory)
+	copyDir := filepath.Join(tempRoot, profilePath)
+	if err := os.Mkdir(copyDir, 0700); err != nil {
+		return err
+	}
+	for _, name := range []string{saltFile, versionFile} {
+		contents, err := os.ReadFile(filepath.Join(cps.ProfileDirectory, name))
+		if err != nil {
+			return fmt.Errorf("could not read '%s': %w", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(copyDir, name), contents, 0600); err != nil {
+			return err
+		}
+	}
+
+	copyDB := filepath.Join(copyDir, dbFile)
+	if strings.ContainsAny(copyDB, "'\x00") {
+		return errors.New("unsupported temporary path for export")
+	}
+	cps.mutex.Lock()
+	err = func() error {
+		ctx := context.Background()
+		conn, err := cps.db.Conn(ctx)
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		// ATTACH is per connection, so every step uses this one.
+		if _, err := conn.ExecContext(ctx, fmt.Sprintf(`ATTACH DATABASE '%s' AS backup KEY "x'%x'";`, copyDB, newKey)); err != nil {
+			return fmt.Errorf("could not create the encrypted copy: %w", err)
+		}
+		defer conn.ExecContext(ctx, `DETACH DATABASE backup;`)
+		if _, err := conn.ExecContext(ctx, `PRAGMA backup.cipher_page_size = 8192;`); err != nil {
+			return err
+		}
+		if _, err := conn.ExecContext(ctx, `SELECT sqlcipher_export('backup');`); err != nil {
+			return fmt.Errorf("could not re-encrypt the profile copy: %w", err)
+		}
+		return nil
+	}()
+	cps.mutex.Unlock()
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("could not create tarball file '%s', got error '%s'", filename, err.Error())
+	}
+	defer file.Close()
+	gzipWriter := gzip.NewWriter(file)
+	defer gzipWriter.Close()
+	tarWriter := tar.NewWriter(gzipWriter)
+	defer tarWriter.Close()
+	for _, name := range []string{dbFile, saltFile, versionFile} {
+		if err := addFileToTarWriter(profilePath, filepath.Join(copyDir, name), tarWriter); err != nil {
+			return fmt.Errorf("could not add '%s' to the backup: %w", name, err)
+		}
 	}
 	return nil
 }

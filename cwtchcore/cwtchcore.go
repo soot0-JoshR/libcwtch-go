@@ -463,6 +463,25 @@ func PromoteEphemeralProfile(onion string, password string) error {
 	return Application.PromoteEphemeralProfile(onion, password)
 }
 
+// ExportProfileWithPassword writes a standard Cwtch backup of a loaded profile,
+// encrypted with backupPassword, after checking its current password. The
+// result is JSON: {"status":"exported"} or {"status":"error","reason":...}.
+// StegMS addition (2026-10-09): identity backup.
+func ExportProfileWithPassword(profileOnion string, file string, currentPassword string, backupPassword string) string {
+	stateMutex.RLock()
+	defer stateMutex.RUnlock()
+	result := map[string]string{"status": "exported"}
+	if Application == nil {
+		result = map[string]string{"status": "error", "reason": "application_not_initialized"}
+	} else if profile := Application.GetPeer(normalizeOnion(profileOnion)); profile == nil {
+		result = map[string]string{"status": "error", "reason": "profile_not_found"}
+	} else if err := profile.ExportWithPassword(file, currentPassword, backupPassword); err != nil {
+		result = map[string]string{"status": "error", "reason": err.Error()}
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
+}
+
 func ImportProfile(exportedCwtchFile string, pass string) string {
 	_, err := Application.ImportProfile(exportedCwtchFile, pass)
 	if err == nil {

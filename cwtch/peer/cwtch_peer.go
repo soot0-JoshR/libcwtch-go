@@ -93,6 +93,34 @@ func (cp *cwtchPeer) Export(file string) error {
 	return cp.storage.Export(file)
 }
 
+// MinBackupPasswordLength is the shortest backup password ExportWithPassword
+// accepts. A backup leaves the device, and Cwtch derives its key with 4096
+// rounds of PBKDF2, so the password carries the protection.
+const MinBackupPasswordLength = 12
+
+// ExportWithPassword writes a standard Cwtch backup encrypted with
+// backupPassword, after checking the profile's current password. The live
+// profile keeps its own password; importing the backup (here or in Vanilla
+// Cwtch) takes backupPassword. StegMS addition (2026-10-09).
+func (cp *cwtchPeer) ExportWithPassword(file string, currentPassword string, backupPassword string) error {
+	if len(backupPassword) < MinBackupPasswordLength {
+		return fmt.Errorf("the backup password must be at least %d characters", MinBackupPasswordLength)
+	}
+	if cp.IsMemoryStore() {
+		return errors.New("a temporary identity cannot be backed up; keep it persistently first")
+	}
+	if !cp.CheckPassword(currentPassword) {
+		return errors.New(constants.InvalidPasswordError)
+	}
+	cp.mutex.Lock()
+	defer cp.mutex.Unlock()
+	salt, err := os.ReadFile(path.Join(cp.storage.ProfileDirectory, saltFile))
+	if err != nil {
+		return err
+	}
+	return cp.storage.ExportWithKey(file, createKey(backupPassword, salt))
+}
+
 func (cp *cwtchPeer) PromoteToEncryptedStore(profileDirectory string, password string) error {
 	return cp.storage.PromoteToEncryptedStore(profileDirectory, password)
 }
