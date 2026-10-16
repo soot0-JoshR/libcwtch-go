@@ -162,7 +162,7 @@ func ProfileHasPassword(profileOnion string) string {
 
 // ExportProfile writes an identity backup encrypted with backupPassword.
 func ExportProfile(profileOnion string, file string, currentPassword string, backupPassword string) string {
-	return cwtchcore.ExportProfileWithPassword(profileOnion, file, currentPassword, backupPassword)
+	return cwtchcore.ExportProfileWithPassword(profileOnion, file, currentPassword, backupPassword, "")
 }
 
 // RestoreProfileBackup restores an identity backup as it was ("" = no password).

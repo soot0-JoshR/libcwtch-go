@@ -23,6 +23,12 @@ const version = "2"
 const saltFile = "SALT"
 const dbFile = "db"
 
+const (
+	maxProfileBackupEntries       = 3
+	maxProfileBackupDatabaseBytes = int64(2 * 1024 * 1024 * 1024)
+	maxProfileBackupVersionBytes  = int64(32)
+)
+
 // CreateKeySalt derives a key and salt from a password: returns key, salt, err
 func CreateKeySalt(password string) ([32]byte, [128]byte, error) {
 	var salt [128]byte
@@ -223,159 +229,144 @@ func FromEncryptedDatabase(profileDirectory string, password string) (CwtchPeer,
 }
 
 func ImportProfile(exportedCwtchFile string, profilesDir string, password string) (CwtchPeer, error) {
-	profileID, err := checkCwtchProfileBackupFile(exportedCwtchFile)
-	if profileID == "" || err != nil {
-		log.Errorf("%s is an invalid cwtch backup file: %s", profileID, err)
+	profileID, profileDir, err := extractCwtchProfileBackupFile(exportedCwtchFile, profilesDir)
+	if err != nil {
+		log.Errorf("%s is an invalid cwtch backup file: %v", profileID, err)
 		return nil, err
 	}
-	log.Infof("%s is a valid cwtch backup file", profileID)
-
-	profileDBFile := filepath.Join(profilesDir, profileID, dbFile)
-	log.Debugf("checking %v", profileDBFile)
-	if _, err := os.Stat(profileDBFile); errors.Is(err, os.ErrNotExist) {
-		// backup is valid and the profile hasn't been imported yet, time to extract and check the password
-		profileDir := filepath.Join(profilesDir, profileID)
-		os.MkdirAll(profileDir, 0700)
-		err := importCwtchProfileBackupFile(exportedCwtchFile, profilesDir)
-		if err == nil {
-			profile, err := FromEncryptedDatabase(profileDir, password)
-			if err == nil {
-				return profile, err
-			}
-			//  Otherwise purge
-			log.Errorf("error importing profile: %v. removing %s", err, profileDir)
-			os.RemoveAll(profileDir)
-			return nil, err
+	keepProfileDir := false
+	defer func() {
+		if !keepProfileDir {
+			_ = os.RemoveAll(profileDir)
 		}
+	}()
+
+	profile, err := FromEncryptedDatabase(profileDir, password)
+	if err != nil {
+		log.Errorf("error importing profile: %v. removing %s", err, profileDir)
 		return nil, err
 	}
-	return nil, fmt.Errorf("%s is already a profile for this app", profileID)
+	keepProfileDir = true
+	return profile, nil
 }
 
-func checkCwtchProfileBackupFile(srcFile string) (string, error) {
+// extractCwtchProfileBackupFile validates and extracts one archive from one
+// open file descriptor. It writes into a private sibling directory and only
+// renames that directory to the archive's profile ID after all three expected
+// regular files have been written and closed successfully.
+func extractCwtchProfileBackupFile(srcFile string, profilesDir string) (string, string, error) {
 	f, err := os.Open(srcFile)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer f.Close()
 
 	gzf, err := gzip.NewReader(f)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
+	defer gzf.Close()
 
 	tarReader := tar.NewReader(gzf)
+	if err := os.MkdirAll(profilesDir, 0700); err != nil {
+		return "", "", err
+	}
+	stagingDir, err := os.MkdirTemp(profilesDir, ".cwtch-import-")
+	if err != nil {
+		return "", "", err
+	}
+	keepStagingDir := false
+	defer func() {
+		if !keepStagingDir {
+			_ = os.RemoveAll(stagingDir)
+		}
+	}()
 
 	profileName := ""
+	seen := make(map[string]bool, maxProfileBackupEntries)
+	entryCount := 0
 
 	for {
 		header, err := tarReader.Next()
-
 		if err == io.EOF {
 			break
 		}
-
 		if err != nil {
-			return "", err
+			return profileName, "", err
 		}
-
-		switch header.Typeflag {
-		case tar.TypeDir:
-			return "", errors.New("invalid cwtch backup file")
-		case tar.TypeReg:
-			parts := strings.Split(header.Name, "/")
-			if len(parts) != 2 {
-				return "", errors.New("invalid header name")
-			}
-			dir := parts[0]
-			profileFileType := parts[1]
-
-			_, hexErr := hex.DecodeString(dir)
-			if dir == "." || dir == ".." || len(dir) != 32 || hexErr != nil {
-				return "", errors.New("invalid profile name")
-			}
-
-			if profileName == "" {
-				profileName = dir
-			}
-			if dir != profileName {
-				return "", errors.New("invalid cwtch backup file")
-			}
-
-			if profileFileType != dbFile && profileFileType != saltFile && profileFileType != versionFile {
-				return "", errors.New("invalid cwtch backup file")
+		entryCount++
+		if entryCount > maxProfileBackupEntries || header.Typeflag != tar.TypeReg {
+			return profileName, "", errors.New("invalid cwtch backup file")
+		}
+		parts := strings.Split(header.Name, "/")
+		if len(parts) != 2 {
+			return profileName, "", errors.New("invalid header name")
+		}
+		dir, base := parts[0], parts[1]
+		_, hexErr := hex.DecodeString(dir)
+		if len(dir) != 32 || hexErr != nil {
+			return profileName, "", errors.New("invalid profile name")
+		}
+		if profileName == "" {
+			profileName = dir
+		}
+		if dir != profileName || seen[base] {
+			return profileName, "", errors.New("invalid cwtch backup file")
+		}
+		switch base {
+		case dbFile, saltFile, versionFile:
+			if !validProfileBackupEntrySize(base, header.Size) {
+				return profileName, "", fmt.Errorf("invalid %s size in cwtch backup", base)
 			}
 		default:
-			return "", errors.New("invalid cwtch backup file")
+			return profileName, "", errors.New("invalid cwtch backup file")
+		}
+		seen[base] = true
+
+		outFile, err := os.OpenFile(filepath.Join(stagingDir, base), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			return profileName, "", fmt.Errorf("error importing cwtch profile file: %w", err)
+		}
+		_, copyErr := io.CopyN(outFile, tarReader, header.Size)
+		closeErr := outFile.Close()
+		if copyErr != nil {
+			return profileName, "", fmt.Errorf("error importing cwtch profile file: %w", copyErr)
+		}
+		if closeErr != nil {
+			return profileName, "", fmt.Errorf("error closing imported cwtch profile file: %w", closeErr)
 		}
 	}
-	return profileName, nil
+	if profileName == "" || len(seen) != maxProfileBackupEntries || !seen[dbFile] || !seen[saltFile] || !seen[versionFile] {
+		return profileName, "", errors.New("cwtch backup is missing required files")
+	}
+	// tar.Reader stops at the archive end markers. Drain the gzip stream so its
+	// checksum and trailer are verified before installing the extracted files.
+	if _, err := io.Copy(io.Discard, gzf); err != nil {
+		return profileName, "", fmt.Errorf("invalid compressed cwtch backup: %w", err)
+	}
+
+	profileDir := filepath.Join(profilesDir, profileName)
+	if _, err := os.Lstat(profileDir); err == nil {
+		return profileName, "", fmt.Errorf("%s is already a profile for this app", profileName)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return profileName, "", err
+	}
+	if err := os.Rename(stagingDir, profileDir); err != nil {
+		return profileName, "", fmt.Errorf("could not install imported profile: %w", err)
+	}
+	keepStagingDir = true
+	return profileName, profileDir, nil
 }
 
-func importCwtchProfileBackupFile(srcFile string, profilesDir string) error {
-	f, err := os.Open(srcFile)
-	if err != nil {
-		return err
+func validProfileBackupEntrySize(base string, size int64) bool {
+	switch base {
+	case dbFile:
+		return size > 0 && size <= maxProfileBackupDatabaseBytes
+	case saltFile:
+		return size == 128
+	case versionFile:
+		return size > 0 && size <= maxProfileBackupVersionBytes
+	default:
+		return false
 	}
-	defer f.Close()
-
-	gzf, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-
-	tarReader := tar.NewReader(gzf)
-
-	profileName := ""
-
-	for {
-		header, err := tarReader.Next()
-
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			return err
-		}
-
-		switch header.Typeflag {
-		case tar.TypeDir:
-			return errors.New("invalid cwtch backup file")
-		case tar.TypeReg:
-			// using split here because we deliberately construct these paths in a cross-platform consistent way
-			parts := strings.Split(header.Name, "/")
-			if len(parts) != 2 {
-				return errors.New("invalid header name")
-			}
-			dir := parts[0]
-			base := parts[1]
-
-			_, hexErr := hex.DecodeString(dir)
-			if dir == "." || dir == ".." || len(dir) != 32 || hexErr != nil {
-				return errors.New("invalid profile name")
-			}
-
-			if profileName == "" {
-				profileName = dir
-			}
-
-			if dir != profileName {
-				return errors.New("invalid cwtch backup file")
-			}
-
-			// here we use filepath.Join to construct a valid directory path
-			outFile, err := os.Create(filepath.Join(profilesDir, dir, base))
-			if err != nil {
-				return fmt.Errorf("error importing cwtch profile file: %s", err)
-			}
-			defer outFile.Close()
-			if _, err := io.Copy(outFile, tarReader); err != nil {
-				return fmt.Errorf("error importing cwtch profile file: %s", err)
-			}
-		default:
-			return errors.New("invalid cwtch backup file")
-		}
-	}
-	return nil
 }

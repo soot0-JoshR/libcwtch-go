@@ -49,6 +49,7 @@ type MediaOffer struct {
 	MimeType            string  `json:"mimeType"`
 	LocalPath           string  `json:"localPath,omitempty"`
 	ErrorMessage        string  `json:"errorMessage,omitempty"`
+	receivedAt          time.Time
 }
 
 type MediaRequestResult struct {
@@ -101,6 +102,10 @@ const (
 	profileLifetimePersistent = "persistent"
 	profileLifetimeEphemeral  = "ephemeral"
 	maxStegmsMediaBytes       = int64(100 * 1024 * 1024)
+	maxStegmsMediaOffers      = 256
+	maxStegmsMediaOffersPeer  = 32
+	maxStegmsTransferIDLength = 256
+	maxStegmsMediaNameRunes   = 256
 )
 
 type EnsureContactResult struct {
@@ -332,7 +337,30 @@ func DeleteContact(profileOnionRaw string, peerOnionRaw string) string {
 
 func init() {
 	utils.OnFileOfferReceived = func(profileOnion string, peerOnion string, conversationID int, messageIndex int, name string, size int64, fileKey string) {
+		if fileKey == "" || len(fileKey) > maxStegmsTransferIDLength {
+			return
+		}
+		nameRunes := []rune(name)
+		if len(nameRunes) > maxStegmsMediaNameRunes {
+			name = string(nameRunes[:maxStegmsMediaNameRunes])
+		}
 		mediaOffersMutex.Lock()
+		pruneMediaOffersLocked(time.Now())
+		peerOffers := 0
+		for _, offer := range mediaOffers {
+			if normalizeOnion(offer.ProfileOnion) == normalizeOnion(profileOnion) && normalizeOnion(offer.PeerOnion) == normalizeOnion(peerOnion) {
+				peerOffers++
+			}
+		}
+		existing, replacing := mediaOffers[fileKey]
+		if replacing && (normalizeOnion(existing.ProfileOnion) != normalizeOnion(profileOnion) || normalizeOnion(existing.PeerOnion) != normalizeOnion(peerOnion)) {
+			mediaOffersMutex.Unlock()
+			return
+		}
+		if !replacing && (len(mediaOffers) >= maxStegmsMediaOffers || peerOffers >= maxStegmsMediaOffersPeer) {
+			mediaOffersMutex.Unlock()
+			return
+		}
 		mediaOffers[fileKey] = MediaOffer{
 			TransferID:          fileKey,
 			ProfileOnion:        profileOnion,
@@ -344,6 +372,7 @@ func init() {
 			State:               "offered",
 			Progress:            0.0,
 			MimeType:            "application/octet-stream",
+			receivedAt:          time.Now(),
 		}
 		mediaOffersMutex.Unlock()
 	}
@@ -485,7 +514,7 @@ func ProfileHasPassword(profileOnion string, blankPassword string) string {
 // encrypted with backupPassword, after checking its current password. The
 // result is JSON: {"status":"exported"} or {"status":"error","reason":...}.
 // StegMS addition (2026-10-09): identity backup.
-func ExportProfileWithPassword(profileOnion string, file string, currentPassword string, backupPassword string) string {
+func ExportProfileWithPassword(profileOnion string, file string, currentPassword string, backupPassword string, blankPassword string) string {
 	stateMutex.RLock()
 	defer stateMutex.RUnlock()
 	result := map[string]string{"status": "exported"}
@@ -493,7 +522,7 @@ func ExportProfileWithPassword(profileOnion string, file string, currentPassword
 		result = map[string]string{"status": "error", "reason": "application_not_initialized"}
 	} else if profile := Application.GetPeer(normalizeOnion(profileOnion)); profile == nil {
 		result = map[string]string{"status": "error", "reason": "profile_not_found"}
-	} else if err := profile.ExportWithPassword(file, currentPassword, backupPassword); err != nil {
+	} else if err := profile.ExportWithPassword(file, currentPassword, backupPassword, blankPassword); err != nil {
 		result = map[string]string{"status": "error", "reason": err.Error()}
 	}
 	bytes, _ := json.Marshal(result)
@@ -533,11 +562,17 @@ func RestoreProfileBackup(exportedCwtchFile string, backupPassword string, blank
 }
 
 func ImportProfile(exportedCwtchFile string, pass string) string {
-	_, err := Application.ImportProfile(exportedCwtchFile, pass)
-	if err == nil {
-		return `{"status":"ok"}`
+	if Application == nil {
+		bytes, _ := json.Marshal(map[string]string{"status": "error", "reason": "application_not_initialized"})
+		return string(bytes)
 	}
-	return fmt.Sprintf(`{"status":"error","reason":"%s"}`, err.Error())
+	_, err := Application.ImportProfile(exportedCwtchFile, pass)
+	result := map[string]string{"status": "ok"}
+	if err != nil {
+		result = map[string]string{"status": "error", "reason": err.Error()}
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
 }
 
 func CreateProfileWithLifetime(nick string, password string, lifetime string) {
@@ -770,7 +805,11 @@ func SendFile(profileOnion string, peerOnion string, filePath string) string {
 		profile := Application.GetPeer(normalizeOnion(profileOnion))
 		if profile != nil {
 			conversation, err := profile.FetchConversationInfo(normalizeOnion(peerOnion))
-			if err == nil && conversation != nil {
+			if err == nil && conversation != nil && conversation.Accepted && !conversationBlocked(conversation) {
+				info, statErr := os.Stat(filePath)
+				if statErr != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxStegmsMediaBytes {
+					return ""
+				}
 				fh, err := filesharing.FunctionalityGate(utils.ReadGlobalSettings().Experiments)
 				if err != nil {
 					log.Errorf("file sharing error: %v", err)
@@ -1001,12 +1040,22 @@ func GetMessages(profileOnionRaw string, conversationID int, messageIndex int, c
 func GetMediaOffers() string {
 	mediaOffersMutex.Lock()
 	defer mediaOffersMutex.Unlock()
+	pruneMediaOffersLocked(time.Now())
 	list := make([]MediaOffer, 0, len(mediaOffers))
 	for _, offer := range mediaOffers {
 		list = append(list, offer)
 	}
 	bytes, _ := json.Marshal(list)
 	return string(bytes)
+}
+
+func pruneMediaOffersLocked(now time.Time) {
+	const offerLifetime = 24 * time.Hour
+	for fileKey, offer := range mediaOffers {
+		if !offer.receivedAt.IsZero() && now.Sub(offer.receivedAt) > offerLifetime {
+			delete(mediaOffers, fileKey)
+		}
+	}
 }
 
 func mediaRequestJSON(offer MediaOffer, status string, reason string) string {

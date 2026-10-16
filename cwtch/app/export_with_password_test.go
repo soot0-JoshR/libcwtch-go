@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -27,21 +28,49 @@ func TestExportWithPasswordRoundTrip(t *testing.T) {
 	onion := created[0]
 	profile := source.GetPeer(onion)
 	backup := filepath.Join(t.TempDir(), "identity.tar.gz")
+	if err := profile.ExportWithPassword(backup, "", "", ""); err == nil {
+		t.Fatal("a password-less identity was backed up under the blank password")
+	}
 
-	if err := profile.ExportWithPassword(backup, "", "too-short"); err == nil {
+	if err := profile.ExportWithPassword(backup, "", "too-short", ""); err == nil {
 		t.Fatal("a backup password shorter than the minimum was accepted")
 	}
-	if err := profile.ExportWithPassword(backup, "not the password", backupPassword); err == nil {
+	if err := profile.ExportWithPassword(backup, "not the password", backupPassword, ""); err == nil {
 		t.Fatal("the wrong current password was accepted")
 	}
 	// The system temp directory is not writable by apps on Android, so the
 	// export must not depend on it.
 	t.Setenv("TMPDIR", filepath.Join(dir, "not-writable-does-not-exist"))
-	if err := profile.ExportWithPassword(backup, "", backupPassword); err != nil {
+	profileDirs, err := filepath.Glob(filepath.Join(dir, "profiles", "*"))
+	if err != nil || len(profileDirs) != 1 {
+		t.Fatalf("could not locate profile directory: %v %v", profileDirs, err)
+	}
+	staleExport := filepath.Join(profileDirs[0], ".cwtch-export-stale")
+	if err := os.Mkdir(staleExport, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := profile.ExportWithPassword(backup, "", backupPassword, ""); err != nil {
 		t.Fatalf("export failed: %v", err)
 	}
-	if leftovers, _ := filepath.Glob(filepath.Join(dir, "cwtch-export-*")); len(leftovers) != 0 {
+	if leftovers, _ := filepath.Glob(filepath.Join(profileDirs[0], ".cwtch-export-*")); len(leftovers) != 0 {
 		t.Fatalf("the temporary export copy was left behind: %v", leftovers)
+	}
+	info, err := os.Stat(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0077 != 0 {
+		t.Fatalf("backup permissions are not private: mode=%v", info.Mode())
+	}
+	existing := filepath.Join(t.TempDir(), "existing.tar.gz")
+	if err := os.WriteFile(existing, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := profile.ExportWithPassword(existing, "", backupPassword, ""); err == nil {
+		t.Fatal("export overwrote an existing file")
+	}
+	if contents, err := os.ReadFile(existing); err != nil || string(contents) != "keep" {
+		t.Fatalf("existing export target was changed: contents=%q err=%v", contents, err)
 	}
 	time.Sleep(200 * time.Millisecond)
 	source.Shutdown()
@@ -105,7 +134,10 @@ func TestExportUnderTheIdentitysOwnPassword(t *testing.T) {
 		t.Fatal("a password-protected identity reported no password")
 	}
 	backup := filepath.Join(t.TempDir(), "identity.tar.gz")
-	if err := profile.ExportWithPassword(backup, own, own); err != nil {
+	if err := profile.ExportWithPassword(backup, own, "a different backup password", ""); err == nil {
+		t.Fatal("a password-protected identity was backed up under a separate password")
+	}
+	if err := profile.ExportWithPassword(backup, own, own, ""); err != nil {
 		t.Fatalf("export under the identity's own password failed: %v", err)
 	}
 	source.Shutdown()
@@ -136,7 +168,7 @@ func TestRestoreKeepsTheIdentitysOwnPassword(t *testing.T) {
 		if plain {
 			err = source.GetPeer(onion).Export(backup)
 		} else {
-			err = source.GetPeer(onion).ExportWithPassword(backup, own, own)
+			err = source.GetPeer(onion).ExportWithPassword(backup, own, own, "")
 		}
 		if err != nil {
 			t.Fatalf("export (plain=%v) failed: %v", plain, err)

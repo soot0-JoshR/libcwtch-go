@@ -112,18 +112,25 @@ func (cp *cwtchPeer) HasPassword(blankPassword string) bool {
 // backupPassword, after checking the profile's current password. The live
 // profile keeps its own password; importing the backup (here or in Vanilla
 // Cwtch) takes backupPassword. StegMS addition (2026-10-09).
-func (cp *cwtchPeer) ExportWithPassword(file string, currentPassword string, backupPassword string) error {
-	// A separate backup password must meet the minimum. An identity that has
-	// its own password is backed up under that same password, whatever its
-	// length: the backup is then exactly as protected as the identity.
-	if backupPassword != currentPassword && len(backupPassword) < MinBackupPasswordLength {
-		return fmt.Errorf("the backup password must be at least %d characters", MinBackupPasswordLength)
-	}
+func (cp *cwtchPeer) ExportWithPassword(file string, currentPassword string, backupPassword string, blankPassword string) error {
 	if cp.IsMemoryStore() {
 		return errors.New("a temporary identity cannot be backed up; keep it persistently first")
 	}
 	if !cp.CheckPassword(currentPassword) {
 		return errors.New(constants.InvalidPasswordError)
+	}
+	hasPassword := !cp.CheckPassword(blankPassword)
+	if hasPassword {
+		if backupPassword != currentPassword {
+			return errors.New("a password-protected identity must be backed up with its identity password")
+		}
+	} else {
+		if currentPassword != blankPassword {
+			return errors.New(constants.InvalidPasswordError)
+		}
+		if backupPassword == blankPassword || len(backupPassword) < MinBackupPasswordLength {
+			return fmt.Errorf("the backup password must be at least %d characters and differ from the blank identity password", MinBackupPasswordLength)
+		}
 	}
 	cp.mutex.Lock()
 	defer cp.mutex.Unlock()
@@ -132,7 +139,7 @@ func (cp *cwtchPeer) ExportWithPassword(file string, currentPassword string, bac
 		return err
 	}
 	kind := BackupPasswordSeparate
-	if backupPassword == currentPassword {
+	if hasPassword {
 		kind = BackupPasswordIdentity
 	}
 	marker := attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(BackupPasswordAttribute)).ToString()
@@ -154,16 +161,17 @@ const (
 // had none) is re-keyed to blankPassword, the platform's "no password"; one
 // under the identity's own password, or without a marker (e.g. from Vanilla
 // Cwtch, whose backups are always under the identity's password), keeps it.
-// The marker is cleared either way. Reports whether it re-keyed.
+// The marker is cleared after a successful restore. Reports whether it re-keyed.
 func (cp *cwtchPeer) RestorePasswordAsItWas(backupPassword string, blankPassword string) (bool, error) {
 	kind, _ := cp.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, BackupPasswordAttribute)
-	cp.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, BackupPasswordAttribute, "")
 	if kind != BackupPasswordSeparate || backupPassword == blankPassword {
+		cp.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, BackupPasswordAttribute, "")
 		return false, nil
 	}
 	if err := cp.ChangePassword(backupPassword, blankPassword, blankPassword); err != nil {
 		return false, err
 	}
+	cp.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, BackupPasswordAttribute, "")
 	return true, nil
 }
 
@@ -478,6 +486,7 @@ func preserveDefaultPeerHistory(cps *CwtchProfileStorage) error {
 
 // FromEncryptedStorage loads an existing Profile from Encrypted Storage
 func FromEncryptedStorage(cps *CwtchProfileStorage) CwtchPeer {
+	cleanupStaleExportDirectories(cps.ProfileDirectory)
 	cp := new(cwtchPeer)
 	cp.shutdown = false
 	cp.storage = cps

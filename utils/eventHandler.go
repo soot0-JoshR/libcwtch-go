@@ -867,6 +867,20 @@ func (eh *EventHandler) interceptProfileEvent(ev *EventProfileEnvelope) {
 					log.Errorf("Unable to correlate file offer %s with a Cwtch conversation", fm.FileKey())
 					return
 				}
+				if eh.app == nil {
+					return
+				}
+				profile := eh.app.GetPeer(ev.Profile)
+				if profile == nil {
+					return
+				}
+				conversation, fetchErr := profile.GetConversationInfo(cID)
+				if fetchErr != nil || conversation == nil || !conversation.Accepted {
+					return
+				}
+				if access, exists := conversation.ACL[conversation.Handle]; exists && access.Blocked {
+					return
+				}
 				mID, _ := strconv.Atoi(ev.Event.Data["Index"])
 				OnFileOfferReceived(ev.Profile, ev.Event.Data["RemotePeer"], cID, mID, fm.Name, int64(fm.Size), fm.FileKey())
 			}

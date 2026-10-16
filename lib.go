@@ -1536,24 +1536,25 @@ func ProfileHasPassword(profileOnion string, blankPassword string) string {
 }
 
 //export c_ExportProfileWithPassword
-func c_ExportProfileWithPassword(profile_ptr *C.char, profile_len C.int, file_ptr *C.char, file_len C.int, current_ptr *C.char, current_len C.int, backup_ptr *C.char, backup_len C.int) *C.char {
+func c_ExportProfileWithPassword(profile_ptr *C.char, profile_len C.int, file_ptr *C.char, file_len C.int, current_ptr *C.char, current_len C.int, backup_ptr *C.char, backup_len C.int, blank_ptr *C.char, blank_len C.int) *C.char {
 	return C.CString(ExportProfileWithPassword(
 		C.GoStringN(profile_ptr, profile_len),
 		C.GoStringN(file_ptr, file_len),
 		C.GoStringN(current_ptr, current_len),
 		C.GoStringN(backup_ptr, backup_len),
+		C.GoStringN(blank_ptr, blank_len),
 	))
 }
 
 // ExportProfileWithPassword writes an identity backup encrypted with
 // backupPassword (StegMS, 2026-10-09). JSON result, as cwtchcore's.
-func ExportProfileWithPassword(profileOnion string, file string, currentPassword string, backupPassword string) string {
+func ExportProfileWithPassword(profileOnion string, file string, currentPassword string, backupPassword string, blankPassword string) string {
 	result := map[string]string{"status": "exported"}
 	if application == nil {
 		result = map[string]string{"status": "error", "reason": "application_not_initialized"}
 	} else if profile := application.GetPeer(profileOnion); profile == nil {
 		result = map[string]string{"status": "error", "reason": "profile_not_found"}
-	} else if err := profile.ExportWithPassword(file, currentPassword, backupPassword); err != nil {
+	} else if err := profile.ExportWithPassword(file, currentPassword, backupPassword, blankPassword); err != nil {
 		result = map[string]string{"status": "error", "reason": err.Error()}
 	}
 	bytes, _ := json.Marshal(result)
@@ -1604,11 +1605,17 @@ func c_ImportProfile(file_ptr *C.char, file_len C.int, passwordPtr *C.char, pass
 
 // ImportProfile is a wrapper around application.ImportProfile
 func ImportProfile(exportedCwtchFile string, pass string) string {
-	_, err := application.ImportProfile(exportedCwtchFile, pass)
-	if err == nil {
-		return `{"status":"ok"}`
+	if application == nil {
+		bytes, _ := json.Marshal(map[string]string{"status": "error", "reason": "application_not_initialized"})
+		return string(bytes)
 	}
-	return fmt.Sprintf(`{"status":"error","reason":"%s"}`, err.Error())
+	_, err := application.ImportProfile(exportedCwtchFile, pass)
+	result := map[string]string{"status": "ok"}
+	if err != nil {
+		result = map[string]string{"status": "error", "reason": err.Error()}
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
 }
 
 //export c_ShutdownCwtch

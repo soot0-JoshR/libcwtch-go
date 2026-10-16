@@ -9,6 +9,7 @@ import (
 	"cwtch.im/cwtch/peer"
 	"cwtch.im/cwtch/protocol/connections"
 	"cwtch.im/cwtch/storage"
+	"errors"
 	"fmt"
 	"git.openprivacy.ca/openprivacy/connectivity"
 	"git.openprivacy.ca/openprivacy/log"
@@ -287,7 +288,10 @@ func (app *application) ImportProfile(exportedCwtchFile string, password string)
 		}
 		profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileStorageAttribute, "disk")
 		profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileSourceAttribute, "imported")
-		app.installProfile(profile)
+		if !app.installProfile(profile) {
+			profile.Delete()
+			return nil, errors.New("identity already exists on this device")
+		}
 	}
 	return profile, err
 }

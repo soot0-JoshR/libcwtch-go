@@ -2,10 +2,13 @@ package cwtchcore
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"git.openprivacy.ca/cwtch.im/libcwtch-go/utils"
 )
 
 func TestSafeMediaFilenameRemovesTraversalAndPreservesExtension(t *testing.T) {
@@ -116,6 +119,42 @@ func TestRequestMediaReportsUnavailableRuntime(t *testing.T) {
 	}
 	if result.Status != "error" || result.Reason != "application_not_initialized" {
 		t.Fatalf("unexpected request response: %#v", result)
+	}
+}
+
+func TestFileOffersAreCappedPerPeer(t *testing.T) {
+	mediaOffersMutex.Lock()
+	previousOffers := mediaOffers
+	mediaOffers = make(map[string]MediaOffer)
+	mediaOffersMutex.Unlock()
+	t.Cleanup(func() {
+		mediaOffersMutex.Lock()
+		mediaOffers = previousOffers
+		mediaOffersMutex.Unlock()
+	})
+
+	for i := 0; i < maxStegmsMediaOffersPeer+10; i++ {
+		utils.OnFileOfferReceived("profile", "peer", 1, i, strings.Repeat("n", maxStegmsMediaNameRunes+10), 1, fmt.Sprintf("key-%d", i))
+	}
+	mediaOffersMutex.Lock()
+	if len(mediaOffers) != maxStegmsMediaOffersPeer {
+		mediaOffersMutex.Unlock()
+		t.Fatalf("stored %d offers, want cap %d", len(mediaOffers), maxStegmsMediaOffersPeer)
+	}
+	for _, offer := range mediaOffers {
+		if len([]rune(offer.SuggestedName)) > maxStegmsMediaNameRunes {
+			mediaOffersMutex.Unlock()
+			t.Fatalf("offer name was not bounded: %d runes", len([]rune(offer.SuggestedName)))
+		}
+	}
+	original := mediaOffers["key-0"]
+	mediaOffersMutex.Unlock()
+
+	utils.OnFileOfferReceived("other-profile", "other-peer", 2, 1, "collision", 1, "key-0")
+	mediaOffersMutex.Lock()
+	defer mediaOffersMutex.Unlock()
+	if got := mediaOffers["key-0"]; got.ProfileOnion != original.ProfileOnion || got.PeerOnion != original.PeerOnion {
+		t.Fatal("a transfer ID collision replaced another peer's offer")
 	}
 }
 

@@ -875,30 +875,30 @@ func (cps *CwtchProfileStorage) PromoteToEncryptedStore(profileDirectory string,
 	if err != nil {
 		return err
 	}
-	
+
 	// 2. Attach new DB and export
 	cps.mutex.Lock()
 	defer cps.mutex.Unlock()
-	
+
 	dbPath := filepath.Join(profileDirectory, "db")
 	attachStmt := fmt.Sprintf(`ATTACH DATABASE '%s' AS encrypted KEY "x'%x'";`, dbPath, key)
 	_, err = cps.db.Exec(attachStmt)
 	if err != nil {
 		return fmt.Errorf("failed to attach encrypted db: %v", err)
 	}
-	
+
 	_, err = cps.db.Exec(`SELECT sqlcipher_export('encrypted');`)
 	if err != nil {
 		// Clean up the attach if export failed
 		cps.db.Exec(`DETACH DATABASE encrypted;`)
 		return fmt.Errorf("failed to export to encrypted db: %v", err)
 	}
-	
+
 	_, err = cps.db.Exec(`DETACH DATABASE encrypted;`)
 	if err != nil {
 		return fmt.Errorf("failed to detach encrypted db: %v", err)
 	}
-	
+
 	return nil
 }
 
@@ -955,11 +955,11 @@ func (cps *CwtchProfileStorage) ExportWithKey(filename string, newKey [32]byte, 
 	if cps.IsMemoryStore() {
 		return errors.New("a memory-only profile has no storage to export")
 	}
-	// The re-keyed copy is made in Cwtch's own data directory (the parent of
-	// "profiles"), which the app can always write: the system temp directory
-	// is not writable by apps on Android. A leftover after a crash has no SALT
-	// at the top level, so LoadProfiles skips it.
-	tempRoot, err := os.MkdirTemp(filepath.Dir(filepath.Dir(cps.ProfileDirectory)), "cwtch-export-")
+	cleanupStaleExportDirectories(cps.ProfileDirectory)
+	// Keep the re-keyed copy inside its profile directory. Android can write
+	// here, profile deletion removes a crash leftover, and startup/export can
+	// identify and clean the private staging directory safely.
+	tempRoot, err := os.MkdirTemp(cps.ProfileDirectory, ".cwtch-export-")
 	if err != nil {
 		return fmt.Errorf("could not create a temporary export directory: %w", err)
 	}
@@ -984,6 +984,11 @@ func (cps *CwtchProfileStorage) ExportWithKey(filename string, newKey [32]byte, 
 	if strings.ContainsAny(copyDB, "'\x00") {
 		return errors.New("unsupported temporary path for export")
 	}
+	conversations, err := cps.FetchConversations()
+	if err != nil {
+		return fmt.Errorf("could not inspect conversations for export: %w", err)
+	}
+
 	cps.mutex.Lock()
 	err = func() error {
 		ctx := context.Background()
@@ -1003,6 +1008,23 @@ func (cps *CwtchProfileStorage) ExportWithKey(filename string, newKey [32]byte, 
 		if _, err := conn.ExecContext(ctx, `SELECT sqlcipher_export('backup');`); err != nil {
 			return fmt.Errorf("could not re-encrypt the profile copy: %w", err)
 		}
+		for _, conversation := range conversations {
+			if conversation.IsGroup() || conversation.IsServer() {
+				continue
+			}
+			if conversation.Attributes[attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(event.SaveHistoryKey)).ToString()] == event.SaveHistoryConfirmed {
+				continue
+			}
+			if _, err := conn.ExecContext(ctx, fmt.Sprintf(`delete from backup.channel_%d_0_chat;`, conversation.ID)); err != nil {
+				return fmt.Errorf("could not remove non-saved message history from backup: %w", err)
+			}
+		}
+		filesharingPrefix := attr.LocalScope.ConstructScopedZonedPath(attr.FilesharingZone.ConstructZonedPath("")).ToString() + "%"
+		if _, err := conn.ExecContext(ctx,
+			`delete from backup.profile_kv where KeyType=(?) and KeyName like (?);`,
+			string(TypeAttribute), filesharingPrefix); err != nil {
+			return fmt.Errorf("could not remove local file-sharing paths from backup: %w", err)
+		}
 		for name, value := range markers {
 			if _, err := conn.ExecContext(ctx,
 				`insert or replace into backup.profile_kv(KeyType, KeyName, KeyValue) values(?,?,?);`,
@@ -1017,21 +1039,58 @@ func (cps *CwtchProfileStorage) ExportWithKey(filename string, newKey [32]byte, 
 		return err
 	}
 
-	file, err := os.Create(filename)
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return fmt.Errorf("could not create tarball file '%s', got error '%s'", filename, err.Error())
 	}
-	defer file.Close()
+	removePartial := true
+	defer func() {
+		if removePartial {
+			_ = os.Remove(filename)
+		}
+	}()
 	gzipWriter := gzip.NewWriter(file)
-	defer gzipWriter.Close()
 	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
 	for _, name := range []string{dbFile, saltFile, versionFile} {
 		if err := addFileToTarWriter(profilePath, filepath.Join(copyDir, name), tarWriter); err != nil {
+			_ = tarWriter.Close()
+			_ = gzipWriter.Close()
+			_ = file.Close()
 			return fmt.Errorf("could not add '%s' to the backup: %w", name, err)
 		}
 	}
+	if err := tarWriter.Close(); err != nil {
+		_ = gzipWriter.Close()
+		_ = file.Close()
+		return fmt.Errorf("could not finish backup archive: %w", err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("could not finish compressed backup: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("could not sync backup to disk: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("could not close backup file: %w", err)
+	}
+	removePartial = false
 	return nil
+}
+
+func cleanupStaleExportDirectories(profileDirectory string) {
+	entries, err := os.ReadDir(profileDirectory)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), ".cwtch-export-") {
+			if err := os.RemoveAll(filepath.Join(profileDirectory, entry.Name())); err != nil {
+				log.Errorf("could not remove stale export directory: %v", err)
+			}
+		}
+	}
 }
 
 func addFileToTarWriter(profilePath string, filePath string, tarWriter *tar.Writer) error {
