@@ -297,6 +297,12 @@ func mergeProfileAttributes(destination, source *CwtchProfileStorage) error {
 	defer rows.Close()
 	filesharingPrefix := attr.LocalScope.ConstructScopedZonedPath(attr.FilesharingZone.ConstructZonedPath("")).ToString()
 	backupPasswordMarker := attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(BackupPasswordAttribute)).ToString()
+	// The current store can itself be a restored backup after restart. Remove
+	// backup-only metadata from the cloned destination as well as skipping it
+	// when copying attributes from the other store.
+	if _, err := destination.db.Exec(`delete from profile_kv where KeyType=(?) and KeyName=(?)`, string(TypeAttribute), backupPasswordMarker); err != nil {
+		return err
+	}
 	for rows.Next() {
 		var key string
 		var value []byte

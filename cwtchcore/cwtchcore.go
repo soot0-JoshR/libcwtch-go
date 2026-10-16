@@ -587,6 +587,19 @@ func ExportDuplicateProfile(id string, side string, file string, currentPassword
 	return string(bytes)
 }
 
+func ConfirmDuplicateBackup(id string, side string, file string, backupPassword string) string {
+	stateMutex.RLock()
+	defer stateMutex.RUnlock()
+	result := map[string]string{"status": "confirmed"}
+	if Application == nil {
+		result = map[string]string{"status": "error", "reason": "application_not_initialized"}
+	} else if err := Application.ConfirmDuplicateBackup(id, side, file, backupPassword); err != nil {
+		result = map[string]string{"status": "error", "reason": err.Error()}
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
+}
+
 func ResolveDuplicateProfile(id string, action string, currentPassword string, duplicatePassword string, blankPassword string) string {
 	stateMutex.Lock()
 	defer stateMutex.Unlock()

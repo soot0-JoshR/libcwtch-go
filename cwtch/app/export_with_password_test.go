@@ -269,6 +269,7 @@ func TestDuplicateIdentityCanBeBackedUpAndJoined(t *testing.T) {
 	if len(conflicts) != 1 || conflicts[0].Onion != onion {
 		t.Fatalf("unexpected duplicate conflicts: %+v", conflicts)
 	}
+	originalCurrentDirectory := application.duplicateProfiles[conflicts[0].ID].currentDirectory
 	currentBackup := filepath.Join(t.TempDir(), "current.tar.gz")
 	duplicateBackup := filepath.Join(t.TempDir(), "duplicate.tar.gz")
 	if err := application.ExportDuplicateProfile(conflicts[0].ID, "current", currentBackup, password, password, ""); err != nil {
@@ -277,23 +278,48 @@ func TestDuplicateIdentityCanBeBackedUpAndJoined(t *testing.T) {
 	if err := application.ExportDuplicateProfile(conflicts[0].ID, "duplicate", duplicateBackup, password, password, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := application.ResolveDuplicateProfile(conflicts[0].ID, "join", password, password, ""); err != nil {
+	application.Shutdown()
+	restarted := NewApp(connectivity.NewLocalACN(), dir)
+	restarted.LoadProfiles(password)
+	conflicts = restarted.ListDuplicateProfiles()
+	if len(conflicts) != 1 || !conflicts[0].CurrentBackedUp || !conflicts[0].DuplicateBackedUp {
+		t.Fatalf("valid backup receipts were not restored after restart: %+v", conflicts)
+	}
+	currentArchiveSide := "current"
+	if restarted.GetPeer(onion).StorageDirectory() != originalCurrentDirectory {
+		// The lexical profile load order may reverse which copy is active.
+		currentArchiveSide = "duplicate"
+	}
+	wrongSide := "duplicate"
+	if currentArchiveSide == "duplicate" {
+		wrongSide = "current"
+	}
+	if err := restarted.ConfirmDuplicateBackup(conflicts[0].ID, wrongSide, currentBackup, password); err == nil {
+		t.Fatal("backup for one copy was accepted as the other copy's safety backup")
+	}
+	if err := restarted.ConfirmDuplicateBackup(conflicts[0].ID, currentArchiveSide, currentBackup, "wrong-password"); err == nil {
+		t.Fatal("backup was accepted with an incorrect password")
+	}
+	if err := restarted.ConfirmDuplicateBackup(conflicts[0].ID, currentArchiveSide, currentBackup, password); err != nil {
+		t.Fatalf("existing safety archive could not be confirmed: %v", err)
+	}
+	if _, err := restarted.ResolveDuplicateProfile(conflicts[0].ID, "join", password, password, ""); err != nil {
 		t.Fatal(err)
 	}
-	if conflicts := application.ListDuplicateProfiles(); len(conflicts) != 0 {
+	if conflicts := restarted.ListDuplicateProfiles(); len(conflicts) != 0 {
 		t.Fatalf("conflict remained after join: %+v", conflicts)
 	}
-	if got := application.ListProfiles(); len(got) != 1 || got[0] != onion {
+	if got := restarted.ListProfiles(); len(got) != 1 || got[0] != onion {
 		t.Fatalf("joined identity is not active: %v", got)
 	}
-	if marker, ok := application.GetPeer(onion).GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, peer.BackupPasswordAttribute); ok && marker != "" {
+	if marker, ok := restarted.GetPeer(onion).GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, peer.BackupPasswordAttribute); ok && marker != "" {
 		t.Fatalf("temporary backup password marker leaked into joined profile: %q", marker)
 	}
 	profileDirectories, err := filepath.Glob(filepath.Join(dir, "profiles", "[0-9a-f]*"))
 	if err != nil || len(profileDirectories) != 1 {
 		t.Fatalf("join did not leave exactly one profile store: %v %v", profileDirectories, err)
 	}
-	application.Shutdown()
+	restarted.Shutdown()
 }
 
 func TestKeepDuplicateRestoresPasswordlessIdentityBeforeDeletingCurrent(t *testing.T) {

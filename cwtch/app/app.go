@@ -62,6 +62,7 @@ type Application interface {
 	ImportProfile(exportedCwtchFile string, password string) (peer.CwtchPeer, error)
 	ListDuplicateProfiles() []DuplicateProfile
 	ExportDuplicateProfile(id string, side string, file string, currentPassword string, backupPassword string, blankPassword string) error
+	ConfirmDuplicateBackup(id string, side string, file string, backupPassword string) error
 	ResolveDuplicateProfile(id string, action string, currentPassword string, duplicatePassword string, blankPassword string) (*peer.ProfileMergeSummary, error)
 	PromoteEphemeralProfile(onion string, password string) error
 	DeletePeer(onion string, currentPassword string)
@@ -526,6 +527,71 @@ func (app *application) ExportDuplicateProfile(id string, side string, file stri
 	if err := profile.ExportWithPassword(file, currentPassword, backupPassword, blankPassword); err != nil {
 		return err
 	}
+	if err := app.recordDuplicateBackup(*conflict, side, file); err != nil {
+		return fmt.Errorf("backup saved, but its recovery receipt could not be recorded: %w", err)
+	}
+	app.appmutex.Lock()
+	if current := app.duplicateProfiles[id]; current != nil {
+		if side == "current" {
+			current.CurrentBackedUp = true
+		} else {
+			current.DuplicateBackedUp = true
+		}
+	}
+	app.appmutex.Unlock()
+	return nil
+}
+
+// ConfirmDuplicateBackup accepts an already-saved archive only after Cwtch's
+// normal safe archive extraction, successful decryption, and a match to the
+// selected store's profile ID and identity. This lets a successful export be
+// acknowledged after an app crash without exporting the same data again.
+func (app *application) ConfirmDuplicateBackup(id string, side string, file string, backupPassword string) error {
+	app.duplicateMutex.Lock()
+	defer app.duplicateMutex.Unlock()
+	app.appmutex.Lock()
+	conflict := app.duplicateProfiles[id]
+	if conflict == nil {
+		app.appmutex.Unlock()
+		return errors.New("duplicate profile conflict not found")
+	}
+	copy := *conflict
+	app.appmutex.Unlock()
+	directory := copy.currentDirectory
+	if side == "duplicate" {
+		directory = copy.duplicateDirectory
+	} else if side != "current" {
+		return errors.New("invalid duplicate profile side")
+	}
+	tempRoot, err := os.MkdirTemp(app.directory, ".cwtch-backup-verify-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tempRoot)
+	archived, err := peer.ImportProfile(file, tempRoot, backupPassword)
+	if err != nil {
+		return fmt.Errorf("backup could not be opened with that password: %w", err)
+	}
+	archiveDirectory := archived.StorageDirectory()
+	archiveOnion := archived.GetOnion()
+	archived.ShutdownWithoutPurgingMessages()
+	if archiveOnion == copy.Onion && path.Base(archiveDirectory) != path.Base(directory) {
+		otherDirectory := copy.duplicateDirectory
+		otherSide := "other"
+		if side == "duplicate" {
+			otherDirectory = copy.currentDirectory
+			otherSide = "current"
+		}
+		if path.Base(archiveDirectory) == path.Base(otherDirectory) {
+			return fmt.Errorf("this archive belongs to the %s copy; use its saved-backup button", otherSide)
+		}
+	}
+	if path.Base(archiveDirectory) != path.Base(directory) || archiveOnion != copy.Onion {
+		return errors.New("backup does not belong to the selected identity copy")
+	}
+	if err := app.recordDuplicateBackup(copy, side, file); err != nil {
+		return fmt.Errorf("backup verified, but its recovery receipt could not be recorded: %w", err)
+	}
 	app.appmutex.Lock()
 	if current := app.duplicateProfiles[id]; current != nil {
 		if side == "current" {
@@ -583,6 +649,7 @@ func (app *application) ResolveDuplicateProfile(id string, action string, curren
 		app.appmutex.Lock()
 		delete(app.duplicateProfiles, id)
 		app.appmutex.Unlock()
+		os.Remove(app.duplicateReceiptPath(conflictCopy))
 		return &peer.ProfileMergeSummary{}, nil
 	case "keep_duplicate", "join":
 		if action == "join" && (!conflictCopy.CurrentBackedUp || !conflictCopy.DuplicateBackedUp) {
@@ -654,6 +721,7 @@ func (app *application) ResolveDuplicateProfile(id string, action string, curren
 		}
 	}
 	app.appmutex.Unlock()
+	os.Remove(app.duplicateReceiptPath(conflictCopy))
 	return summary, nil
 }
 
@@ -681,6 +749,9 @@ func (app *application) registerDuplicateProfile(duplicate peer.CwtchPeer) *Dupl
 		currentDirectory:      currentDirectory,
 		duplicateDirectory:    duplicateDirectory,
 	}
+	receipt := app.readDuplicateReceipt(*conflict)
+	conflict.CurrentBackedUp = receipt.Current != nil
+	conflict.DuplicateBackedUp = receipt.Duplicate != nil
 	app.duplicateProfiles[conflict.ID] = conflict
 	return conflict
 }

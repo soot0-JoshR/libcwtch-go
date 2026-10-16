@@ -1631,6 +1631,25 @@ func ExportDuplicateProfile(id string, side string, file string, currentPassword
 	return string(bytes)
 }
 
+//export c_ConfirmDuplicateBackup
+func c_ConfirmDuplicateBackup(idPtr *C.char, idLen C.int, sidePtr *C.char, sideLen C.int, filePtr *C.char, fileLen C.int, passwordPtr *C.char, passwordLen C.int) *C.char {
+	return C.CString(ConfirmDuplicateBackup(
+		C.GoStringN(idPtr, idLen), C.GoStringN(sidePtr, sideLen),
+		C.GoStringN(filePtr, fileLen), C.GoStringN(passwordPtr, passwordLen),
+	))
+}
+
+func ConfirmDuplicateBackup(id string, side string, file string, backupPassword string) string {
+	result := map[string]string{"status": "confirmed"}
+	if application == nil {
+		result = map[string]string{"status": "error", "reason": "application_not_initialized"}
+	} else if err := application.ConfirmDuplicateBackup(id, side, file, backupPassword); err != nil {
+		result = map[string]string{"status": "error", "reason": err.Error()}
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
+}
+
 //export c_ResolveDuplicateProfile
 func c_ResolveDuplicateProfile(idPtr *C.char, idLen C.int, actionPtr *C.char, actionLen C.int, currentPtr *C.char, currentLen C.int, duplicatePtr *C.char, duplicateLen C.int, blankPtr *C.char, blankLen C.int) *C.char {
 	return C.CString(ResolveDuplicateProfile(

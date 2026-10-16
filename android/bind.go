@@ -178,6 +178,10 @@ func ExportDuplicateProfile(id string, side string, file string, currentPassword
 	return cwtchcore.ExportDuplicateProfile(id, side, file, currentPassword, backupPassword, "")
 }
 
+func ConfirmDuplicateBackup(id string, side string, file string, backupPassword string) string {
+	return cwtchcore.ConfirmDuplicateBackup(id, side, file, backupPassword)
+}
+
 func ResolveDuplicateProfile(id string, action string, currentPassword string, duplicatePassword string) string {
 	return cwtchcore.ResolveDuplicateProfile(id, action, currentPassword, duplicatePassword, "")
 }
