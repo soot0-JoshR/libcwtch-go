@@ -633,9 +633,12 @@ func (app *application) ResolveDuplicateProfile(id string, action string, curren
 		duplicate.ShutdownWithoutPurgingMessages()
 		return nil, errors.New("invalid duplicate profile action")
 	}
-	if action == "join" && (!conflictCopy.CurrentBackedUp || !conflictCopy.DuplicateBackedUp) {
-		duplicate.ShutdownWithoutPurgingMessages()
-		return nil, errors.New("both profile copies must be backed up before joining")
+	if action == "join" {
+		receipt := app.readDuplicateReceipt(conflictCopy)
+		if receipt.Current == nil || receipt.Duplicate == nil {
+			duplicate.ShutdownWithoutPurgingMessages()
+			return nil, errors.New("both profile copies must have intact safety backups before joining")
+		}
 	}
 	if action == "keep_current" {
 		// A restored backup can become the active copy after startup. A

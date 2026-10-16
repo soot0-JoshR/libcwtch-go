@@ -278,6 +278,16 @@ func TestDuplicateIdentityCanBeBackedUpAndJoined(t *testing.T) {
 	if err := application.ExportDuplicateProfile(conflicts[0].ID, "duplicate", duplicateBackup, password, password, ""); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Remove(duplicateBackup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.ResolveDuplicateProfile(conflicts[0].ID, "join", password, password, ""); err == nil {
+		t.Fatal("join accepted a deleted safety backup")
+	}
+	duplicateBackup = filepath.Join(t.TempDir(), "replacement-duplicate.tar.gz")
+	if err := application.ExportDuplicateProfile(conflicts[0].ID, "duplicate", duplicateBackup, password, password, ""); err != nil {
+		t.Fatal(err)
+	}
 	application.Shutdown()
 	restarted := NewApp(connectivity.NewLocalACN(), dir)
 	restarted.LoadProfiles(password)
