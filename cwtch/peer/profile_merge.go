@@ -24,7 +24,7 @@ type ProfileMergeSummary struct {
 // primary, then atomically installs that clone at primaryDirectory. Both input
 // stores must be offline. The originals are not removed until the clone has
 // reopened with the expected identity.
-func MergeEncryptedProfileDirectories(primaryDirectory, primaryPassword, secondaryDirectory, secondaryPassword string) (CwtchPeer, *ProfileMergeSummary, error) {
+func MergeEncryptedProfileDirectories(primaryDirectory, primaryPassword, secondaryDirectory, secondaryPassword, blankPassword string) (CwtchPeer, *ProfileMergeSummary, error) {
 	if primaryDirectory == secondaryDirectory {
 		return nil, nil, errors.New("cannot merge a profile store with itself")
 	}
@@ -79,6 +79,19 @@ func MergeEncryptedProfileDirectories(primaryDirectory, primaryPassword, seconda
 	}
 	mergedPeer := merged.(*cwtchPeer)
 	summary, err := mergeProfileData(mergedPeer.storage, secondaryPeer.storage)
+	mergedPassword := primaryPassword
+	if err == nil {
+		// Re-key only the disposable merged clone. If the active current copy
+		// was itself restored from a passwordless backup, the backup password
+		// must not become the joined identity password. A failed join leaves
+		// the original current store and its password untouched.
+		removed, restoreErr := merged.RestorePasswordAsItWas(primaryPassword, blankPassword)
+		if restoreErr != nil {
+			err = restoreErr
+		} else if removed {
+			mergedPassword = blankPassword
+		}
+	}
 	if err == nil && merged.GetOnion() != expectedOnion {
 		err = errors.New("merged profile identity changed")
 	}
@@ -105,7 +118,7 @@ func MergeEncryptedProfileDirectories(primaryDirectory, primaryPassword, seconda
 	if err := os.Rename(mergedDirectory, primaryDirectory); err != nil {
 		return nil, nil, fmt.Errorf("could not install merged profile: %w", err)
 	}
-	installed, err := FromEncryptedDatabase(primaryDirectory, primaryPassword)
+	installed, err := FromEncryptedDatabase(primaryDirectory, mergedPassword)
 	if err != nil || installed.GetOnion() != expectedOnion {
 		if installed != nil {
 			installed.ShutdownWithoutPurgingMessages()
@@ -297,12 +310,6 @@ func mergeProfileAttributes(destination, source *CwtchProfileStorage) error {
 	defer rows.Close()
 	filesharingPrefix := attr.LocalScope.ConstructScopedZonedPath(attr.FilesharingZone.ConstructZonedPath("")).ToString()
 	backupPasswordMarker := attr.LocalScope.ConstructScopedZonedPath(attr.ProfileZone.ConstructZonedPath(BackupPasswordAttribute)).ToString()
-	// The current store can itself be a restored backup after restart. Remove
-	// backup-only metadata from the cloned destination as well as skipping it
-	// when copying attributes from the other store.
-	if _, err := destination.db.Exec(`delete from profile_kv where KeyType=(?) and KeyName=(?)`, string(TypeAttribute), backupPasswordMarker); err != nil {
-		return err
-	}
 	for rows.Next() {
 		var key string
 		var value []byte

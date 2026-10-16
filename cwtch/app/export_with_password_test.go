@@ -322,6 +322,62 @@ func TestDuplicateIdentityCanBeBackedUpAndJoined(t *testing.T) {
 	restarted.Shutdown()
 }
 
+func TestJoinAfterLoadOrderReversalKeepsPasswordlessIdentityPasswordless(t *testing.T) {
+	const backupPassword = "separate-backup-password"
+	directory := t.TempDir()
+	first := NewApp(connectivity.NewLocalACN(), directory)
+	first.CreatePeer("passwordless-join", "", map[attr.ZonedPath]string{})
+	onion := first.ListProfiles()[0]
+	seed := filepath.Join(t.TempDir(), "seed.tar.gz")
+	if err := first.GetPeer(onion).ExportWithPassword(seed, "", backupPassword, ""); err != nil {
+		t.Fatal(err)
+	}
+	fixture := filepath.Join(t.TempDir(), "fixture.tar.gz")
+	rewriteBackupProfileID(t, seed, fixture, "00112233445566778899aabbccddeeff")
+	if profile, err := first.ImportProfile(fixture, backupPassword); err == nil || profile != nil {
+		t.Fatal("duplicate backup was not quarantined")
+	}
+	first.Shutdown()
+
+	restarted := NewApp(connectivity.NewLocalACN(), directory)
+	// Deliberately load the restored backup first, making its temporary backup
+	// password the active copy's current password for this session.
+	restarted.LoadProfiles(backupPassword)
+	restarted.LoadProfiles("")
+	if !restarted.GetPeer(onion).CheckPassword(backupPassword) {
+		t.Fatal("restored backup was not the active copy")
+	}
+	conflicts := restarted.ListDuplicateProfiles()
+	if len(conflicts) != 1 {
+		t.Fatalf("expected one duplicate conflict, got %+v", conflicts)
+	}
+	currentBackup := filepath.Join(t.TempDir(), "current.tar.gz")
+	otherBackup := filepath.Join(t.TempDir(), "other.tar.gz")
+	if err := restarted.ExportDuplicateProfile(conflicts[0].ID, "current", currentBackup, backupPassword, backupPassword, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.ExportDuplicateProfile(conflicts[0].ID, "duplicate", otherBackup, "", backupPassword, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restarted.ResolveDuplicateProfile(conflicts[0].ID, "join", backupPassword, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	joined := restarted.GetPeer(onion)
+	if joined == nil || !joined.CheckPassword("") || joined.CheckPassword(backupPassword) {
+		t.Fatal("join retained a temporary backup password on an originally passwordless identity")
+	}
+	if marker, ok := joined.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, peer.BackupPasswordAttribute); ok && marker != "" {
+		t.Fatalf("backup-only marker remained on joined identity: %q", marker)
+	}
+	restarted.Shutdown()
+	third := NewApp(connectivity.NewLocalACN(), directory)
+	third.LoadProfiles("")
+	if len(third.ListProfiles()) != 1 || third.GetPeer(onion) == nil {
+		t.Fatal("joined identity did not reopen without a password")
+	}
+	third.Shutdown()
+}
+
 func TestKeepDuplicateRestoresPasswordlessIdentityBeforeDeletingCurrent(t *testing.T) {
 	const backupPassword = "separate-backup-password"
 	dir := t.TempDir()

@@ -61,7 +61,7 @@ func TestMergeEncryptedProfileDirectories(t *testing.T) {
 	primary.ShutdownWithoutPurgingMessages()
 	secondary.ShutdownWithoutPurgingMessages()
 
-	merged, summary, err := MergeEncryptedProfileDirectories(primaryDirectory, "primary-password", secondaryDirectory, "secondary-password")
+	merged, summary, err := MergeEncryptedProfileDirectories(primaryDirectory, "primary-password", secondaryDirectory, "secondary-password", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestMergeRejectsDifferentIdentitiesWithoutChangingEither(t *testing.T) {
 	}
 	primary.Shutdown()
 	secondary.Shutdown()
-	if _, _, err := MergeEncryptedProfileDirectories(primaryDirectory, "primary-password", secondaryDirectory, "secondary-password"); err == nil {
+	if _, _, err := MergeEncryptedProfileDirectories(primaryDirectory, "primary-password", secondaryDirectory, "secondary-password", ""); err == nil {
 		t.Fatal("different identities were merged")
 	}
 	for _, directory := range []string{primaryDirectory, secondaryDirectory} {

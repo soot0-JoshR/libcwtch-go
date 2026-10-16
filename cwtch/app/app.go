@@ -629,6 +629,26 @@ func (app *application) ResolveDuplicateProfile(id string, action string, curren
 		}
 		return nil, errors.New(constants.InvalidPasswordError)
 	}
+	if action != "keep_current" && action != "keep_duplicate" && action != "join" {
+		duplicate.ShutdownWithoutPurgingMessages()
+		return nil, errors.New("invalid duplicate profile action")
+	}
+	if action == "join" && (!conflictCopy.CurrentBackedUp || !conflictCopy.DuplicateBackedUp) {
+		duplicate.ShutdownWithoutPurgingMessages()
+		return nil, errors.New("both profile copies must be backed up before joining")
+	}
+	if action == "keep_current" {
+		// A restored backup can become the active copy after startup. A
+		// keeper choice must restore its original password state.
+		removed, restoreErr := current.RestorePasswordAsItWas(currentPassword, blankPassword)
+		if restoreErr != nil {
+			duplicate.ShutdownWithoutPurgingMessages()
+			return nil, restoreErr
+		}
+		if removed {
+			currentPassword = blankPassword
+		}
+	}
 	if action == "keep_duplicate" {
 		removed, restoreErr := duplicate.RestorePasswordAsItWas(duplicatePassword, blankPassword)
 		if restoreErr != nil {
@@ -652,11 +672,6 @@ func (app *application) ResolveDuplicateProfile(id string, action string, curren
 		os.Remove(app.duplicateReceiptPath(conflictCopy))
 		return &peer.ProfileMergeSummary{}, nil
 	case "keep_duplicate", "join":
-		if action == "join" && (!conflictCopy.CurrentBackedUp || !conflictCopy.DuplicateBackedUp) {
-			return nil, errors.New("both profile copies must be backed up before joining")
-		}
-	default:
-		return nil, errors.New("invalid duplicate profile action")
 	}
 
 	app.appmutex.Lock()
@@ -670,7 +685,7 @@ func (app *application) ResolveDuplicateProfile(id string, action string, curren
 	if action == "join" {
 		replacement, summary, err = peer.MergeEncryptedProfileDirectories(
 			conflictCopy.currentDirectory, currentPassword,
-			conflictCopy.duplicateDirectory, duplicatePassword,
+			conflictCopy.duplicateDirectory, duplicatePassword, blankPassword,
 		)
 	} else {
 		replacement, err = peer.FromEncryptedDatabase(conflictCopy.duplicateDirectory, duplicatePassword)
