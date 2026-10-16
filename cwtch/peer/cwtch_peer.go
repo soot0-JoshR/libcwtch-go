@@ -185,6 +185,15 @@ func (cp *cwtchPeer) IsMemoryStore() bool {
 	return cp.storage.IsMemoryStore()
 }
 
+// StorageDirectory returns the internal profile-store location. Callers must
+// never expose it across an application boundary; app uses it to identify and
+// resolve duplicate stores through opaque conflict IDs.
+func (cp *cwtchPeer) StorageDirectory() string {
+	cp.mutex.Lock()
+	defer cp.mutex.Unlock()
+	return cp.storage.ProfileDirectory
+}
+
 func (cp *cwtchPeer) Delete() {
 	cp.mutex.Lock()
 	defer cp.mutex.Unlock()
@@ -1289,6 +1298,21 @@ func (cp *cwtchPeer) Shutdown() {
 		cp.queue.Shutdown()
 		if cp.storage != nil {
 			cp.storage.Close(true)
+		}
+	}
+}
+
+// ShutdownWithoutPurgingMessages closes an offline/quarantined profile copy
+// without applying the normal active-session history policy. It must not be
+// used for an initialized, networked profile.
+func (cp *cwtchPeer) ShutdownWithoutPurgingMessages() {
+	cp.mutex.Lock()
+	defer cp.mutex.Unlock()
+	if !cp.shutdown {
+		cp.shutdown = true
+		cp.queue.Shutdown()
+		if cp.storage != nil {
+			cp.storage.Close(false)
 		}
 	}
 }

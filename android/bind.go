@@ -170,6 +170,18 @@ func RestoreProfileBackup(file string, backupPassword string) string {
 	return cwtchcore.RestoreProfileBackup(file, backupPassword, "")
 }
 
+func GetDuplicateProfiles() string {
+	return cwtchcore.GetDuplicateProfiles()
+}
+
+func ExportDuplicateProfile(id string, side string, file string, currentPassword string, backupPassword string) string {
+	return cwtchcore.ExportDuplicateProfile(id, side, file, currentPassword, backupPassword, "")
+}
+
+func ResolveDuplicateProfile(id string, action string, currentPassword string, duplicatePassword string) string {
+	return cwtchcore.ResolveDuplicateProfile(id, action, currentPassword, duplicatePassword, "")
+}
+
 func ImportProfile(file string, password string) string {
 	return cwtchcore.ImportProfile(file, password)
 }

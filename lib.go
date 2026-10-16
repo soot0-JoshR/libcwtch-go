@@ -1582,6 +1582,9 @@ func RestoreProfileBackup(exportedCwtchFile string, backupPassword string, blank
 	}
 	profile, err := application.ImportProfile(exportedCwtchFile, backupPassword)
 	if err != nil || profile == nil {
+		if err != nil && strings.HasPrefix(err.Error(), "duplicate identity conflict:") {
+			return encode(map[string]string{"status": "conflict", "conflictId": strings.TrimPrefix(err.Error(), "duplicate identity conflict:")})
+		}
 		reason := "import_failed"
 		if err != nil {
 			reason = err.Error()
@@ -1594,6 +1597,60 @@ func RestoreProfileBackup(exportedCwtchFile string, backupPassword string, blank
 		result["reason"] = err.Error()
 	}
 	return encode(result)
+}
+
+//export c_GetDuplicateProfiles
+func c_GetDuplicateProfiles() *C.char {
+	return C.CString(GetDuplicateProfiles())
+}
+
+func GetDuplicateProfiles() string {
+	if application == nil {
+		return `[]`
+	}
+	bytes, _ := json.Marshal(application.ListDuplicateProfiles())
+	return string(bytes)
+}
+
+//export c_ExportDuplicateProfile
+func c_ExportDuplicateProfile(idPtr *C.char, idLen C.int, sidePtr *C.char, sideLen C.int, filePtr *C.char, fileLen C.int, currentPtr *C.char, currentLen C.int, backupPtr *C.char, backupLen C.int, blankPtr *C.char, blankLen C.int) *C.char {
+	return C.CString(ExportDuplicateProfile(
+		C.GoStringN(idPtr, idLen), C.GoStringN(sidePtr, sideLen), C.GoStringN(filePtr, fileLen),
+		C.GoStringN(currentPtr, currentLen), C.GoStringN(backupPtr, backupLen), C.GoStringN(blankPtr, blankLen),
+	))
+}
+
+func ExportDuplicateProfile(id string, side string, file string, currentPassword string, backupPassword string, blankPassword string) string {
+	result := map[string]string{"status": "exported"}
+	if application == nil {
+		result = map[string]string{"status": "error", "reason": "application_not_initialized"}
+	} else if err := application.ExportDuplicateProfile(id, side, file, currentPassword, backupPassword, blankPassword); err != nil {
+		result = map[string]string{"status": "error", "reason": err.Error()}
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
+}
+
+//export c_ResolveDuplicateProfile
+func c_ResolveDuplicateProfile(idPtr *C.char, idLen C.int, actionPtr *C.char, actionLen C.int, currentPtr *C.char, currentLen C.int, duplicatePtr *C.char, duplicateLen C.int, blankPtr *C.char, blankLen C.int) *C.char {
+	return C.CString(ResolveDuplicateProfile(
+		C.GoStringN(idPtr, idLen), C.GoStringN(actionPtr, actionLen),
+		C.GoStringN(currentPtr, currentLen), C.GoStringN(duplicatePtr, duplicateLen), C.GoStringN(blankPtr, blankLen),
+	))
+}
+
+func ResolveDuplicateProfile(id string, action string, currentPassword string, duplicatePassword string, blankPassword string) string {
+	result := map[string]any{"status": "resolved"}
+	if application == nil {
+		result = map[string]any{"status": "error", "reason": "application_not_initialized"}
+	} else if summary, err := application.ResolveDuplicateProfile(id, action, currentPassword, duplicatePassword, blankPassword); err != nil {
+		result = map[string]any{"status": "error", "reason": err.Error()}
+	} else if summary != nil {
+		result["conversationsAdded"] = summary.ConversationsAdded
+		result["messagesAdded"] = summary.MessagesAdded
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
 }
 
 //export c_ImportProfile

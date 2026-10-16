@@ -547,6 +547,9 @@ func RestoreProfileBackup(exportedCwtchFile string, backupPassword string, blank
 	}
 	profile, err := Application.ImportProfile(exportedCwtchFile, backupPassword)
 	if err != nil || profile == nil {
+		if err != nil && strings.HasPrefix(err.Error(), "duplicate identity conflict:") {
+			return encode(map[string]string{"status": "conflict", "conflictId": strings.TrimPrefix(err.Error(), "duplicate identity conflict:")})
+		}
 		reason := "import_failed"
 		if err != nil {
 			reason = err.Error()
@@ -559,6 +562,45 @@ func RestoreProfileBackup(exportedCwtchFile string, backupPassword string, blank
 		result["reason"] = err.Error()
 	}
 	return encode(result)
+}
+
+func GetDuplicateProfiles() string {
+	stateMutex.RLock()
+	defer stateMutex.RUnlock()
+	if Application == nil {
+		return `[]`
+	}
+	bytes, _ := json.Marshal(Application.ListDuplicateProfiles())
+	return string(bytes)
+}
+
+func ExportDuplicateProfile(id string, side string, file string, currentPassword string, backupPassword string, blankPassword string) string {
+	stateMutex.RLock()
+	defer stateMutex.RUnlock()
+	result := map[string]string{"status": "exported"}
+	if Application == nil {
+		result = map[string]string{"status": "error", "reason": "application_not_initialized"}
+	} else if err := Application.ExportDuplicateProfile(id, side, file, currentPassword, backupPassword, blankPassword); err != nil {
+		result = map[string]string{"status": "error", "reason": err.Error()}
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
+}
+
+func ResolveDuplicateProfile(id string, action string, currentPassword string, duplicatePassword string, blankPassword string) string {
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
+	result := map[string]any{"status": "resolved"}
+	if Application == nil {
+		result = map[string]any{"status": "error", "reason": "application_not_initialized"}
+	} else if summary, err := Application.ResolveDuplicateProfile(id, action, currentPassword, duplicatePassword, blankPassword); err != nil {
+		result = map[string]any{"status": "error", "reason": err.Error()}
+	} else if summary != nil {
+		result["conversationsAdded"] = summary.ConversationsAdded
+		result["messagesAdded"] = summary.MessagesAdded
+	}
+	bytes, _ := json.Marshal(result)
+	return string(bytes)
 }
 
 func ImportProfile(exportedCwtchFile string, pass string) string {

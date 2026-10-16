@@ -71,6 +71,7 @@ type CwtchPeer interface {
 	StartServerConnections()
 
 	Shutdown()
+	ShutdownWithoutPurgingMessages()
 
 	// GetOnion is deprecated. If you find yourself needing to rely on this method it is time
 	// to consider replacing this with a GetAddress(es) function that can fully expand cwtch beyond the boundaries
@@ -140,6 +141,7 @@ type CwtchPeer interface {
 	RestorePasswordAsItWas(backupPassword string, blankPassword string) (bool, error)
 	PromoteToEncryptedStore(profileDirectory string, password string) error
 	IsMemoryStore() bool
+	StorageDirectory() string
 	Delete()
 	SignMessage(message []byte) ([]byte, error)
 }

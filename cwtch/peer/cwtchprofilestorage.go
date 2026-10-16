@@ -325,13 +325,7 @@ func (cps *CwtchProfileStorage) NewConversation(handle string, attributes model.
 		return -1, tx.Rollback()
 	}
 
-	result, err = tx.Exec(fmt.Sprintf(createTableConversationMessagesSQLStmt, id))
-	if err != nil {
-		log.Errorf("error executing transaction: %v", err)
-		return -1, tx.Rollback()
-	}
-
-	conversationID, err := result.LastInsertId()
+	_, err = tx.Exec(fmt.Sprintf(createTableConversationMessagesSQLStmt, id))
 	if err != nil {
 		log.Errorf("error executing transaction: %v", err)
 		return -1, tx.Rollback()
@@ -343,7 +337,7 @@ func (cps *CwtchProfileStorage) NewConversation(handle string, attributes model.
 		return -1, tx.Rollback()
 	}
 
-	return int(conversationID), nil
+	return int(id), nil
 }
 
 // GetConversationByHandle is a convenience method to fetch an active conversation by a handle

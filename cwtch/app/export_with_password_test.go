@@ -1,6 +1,10 @@
 package app
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +15,52 @@ import (
 	"git.openprivacy.ca/openprivacy/connectivity"
 	_ "github.com/mutecomm/go-sqlcipher/v4"
 )
+
+func rewriteBackupProfileID(t *testing.T, source string, destination string, profileID string) {
+	t.Helper()
+	input, err := os.Open(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	gzipInput, err := gzip.NewReader(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := os.Create(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gzipOutput := gzip.NewWriter(output)
+	tarOutput := tar.NewWriter(gzipOutput)
+	tarInput := tar.NewReader(gzipInput)
+	for {
+		header, err := tarInput.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		copy := *header
+		copy.Name = profileID + "/" + filepath.Base(header.Name)
+		if err := tarOutput.WriteHeader(&copy); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.Copy(tarOutput, tarInput); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tarOutput.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzipOutput.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // StegMS identity backup: a backup is encrypted with its own password, imports
 // as a standard Cwtch backup, and leaves the live profile's password alone.
@@ -198,4 +248,99 @@ func TestRestoreKeepsTheIdentitysOwnPassword(t *testing.T) {
 		}
 		again.Shutdown()
 	}
+}
+
+func TestDuplicateIdentityCanBeBackedUpAndJoined(t *testing.T) {
+	const password = "identity-password"
+	dir := t.TempDir()
+	application := NewApp(connectivity.NewLocalACN(), dir).(*application)
+	application.CreatePeer("duplicate-probe", password, map[attr.ZonedPath]string{})
+	onion := application.ListProfiles()[0]
+	backup := filepath.Join(t.TempDir(), "identity.tar.gz")
+	if err := application.GetPeer(onion).ExportWithPassword(backup, password, password, ""); err != nil {
+		t.Fatal(err)
+	}
+	renamed := filepath.Join(t.TempDir(), "renamed.tar.gz")
+	rewriteBackupProfileID(t, backup, renamed, "00112233445566778899aabbccddeeff")
+	if profile, err := application.ImportProfile(renamed, password); err == nil || profile != nil {
+		t.Fatal("renamed duplicate backup was not routed to conflict review")
+	}
+	conflicts := application.ListDuplicateProfiles()
+	if len(conflicts) != 1 || conflicts[0].Onion != onion {
+		t.Fatalf("unexpected duplicate conflicts: %+v", conflicts)
+	}
+	currentBackup := filepath.Join(t.TempDir(), "current.tar.gz")
+	duplicateBackup := filepath.Join(t.TempDir(), "duplicate.tar.gz")
+	if err := application.ExportDuplicateProfile(conflicts[0].ID, "current", currentBackup, password, password, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ExportDuplicateProfile(conflicts[0].ID, "duplicate", duplicateBackup, password, password, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.ResolveDuplicateProfile(conflicts[0].ID, "join", password, password, ""); err != nil {
+		t.Fatal(err)
+	}
+	if conflicts := application.ListDuplicateProfiles(); len(conflicts) != 0 {
+		t.Fatalf("conflict remained after join: %+v", conflicts)
+	}
+	if got := application.ListProfiles(); len(got) != 1 || got[0] != onion {
+		t.Fatalf("joined identity is not active: %v", got)
+	}
+	if marker, ok := application.GetPeer(onion).GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, peer.BackupPasswordAttribute); ok && marker != "" {
+		t.Fatalf("temporary backup password marker leaked into joined profile: %q", marker)
+	}
+	profileDirectories, err := filepath.Glob(filepath.Join(dir, "profiles", "[0-9a-f]*"))
+	if err != nil || len(profileDirectories) != 1 {
+		t.Fatalf("join did not leave exactly one profile store: %v %v", profileDirectories, err)
+	}
+	application.Shutdown()
+}
+
+func TestKeepDuplicateRestoresPasswordlessIdentityBeforeDeletingCurrent(t *testing.T) {
+	const backupPassword = "separate-backup-password"
+	dir := t.TempDir()
+	application := NewApp(connectivity.NewLocalACN(), dir).(*application)
+	application.CreatePeer("passwordless-duplicate", "", map[attr.ZonedPath]string{})
+	onion := application.ListProfiles()[0]
+	currentDirectory := application.GetPeer(onion).StorageDirectory()
+
+	backup := filepath.Join(t.TempDir(), "identity.tar.gz")
+	if err := application.GetPeer(onion).ExportWithPassword(backup, "", backupPassword, ""); err != nil {
+		t.Fatal(err)
+	}
+	renamed := filepath.Join(t.TempDir(), "renamed.tar.gz")
+	rewriteBackupProfileID(t, backup, renamed, "ffeeddccbbaa99887766554433221100")
+	if profile, err := application.ImportProfile(renamed, backupPassword); err == nil || profile != nil {
+		t.Fatal("renamed duplicate backup was not routed to conflict review")
+	}
+	conflicts := application.ListDuplicateProfiles()
+	if len(conflicts) != 1 {
+		t.Fatalf("unexpected duplicate conflicts: %+v", conflicts)
+	}
+	duplicateDirectory := application.duplicateProfiles[conflicts[0].ID].duplicateDirectory
+	if _, err := application.ResolveDuplicateProfile(conflicts[0].ID, "keep_duplicate", "", backupPassword, ""); err != nil {
+		t.Fatal(err)
+	}
+	replacement := application.GetPeer(onion)
+	if replacement == nil || replacement.StorageDirectory() != duplicateDirectory {
+		t.Fatal("selected duplicate was not activated")
+	}
+	if !replacement.CheckPassword("") || replacement.CheckPassword(backupPassword) {
+		t.Fatal("selected duplicate did not return to its original passwordless state")
+	}
+	if _, err := os.Stat(currentDirectory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("discarded current directory remains: %v", err)
+	}
+	application.Shutdown()
+}
+
+func TestRepeatedLoadDoesNotRegisterActiveStoreAsDuplicate(t *testing.T) {
+	dir := t.TempDir()
+	application := NewApp(connectivity.NewLocalACN(), dir).(*application)
+	application.CreatePeer("load-once", "profile-password", map[attr.ZonedPath]string{})
+	application.LoadProfiles("profile-password")
+	if conflicts := application.ListDuplicateProfiles(); len(conflicts) != 0 {
+		t.Fatalf("active store was registered as a duplicate: %+v", conflicts)
+	}
+	application.Shutdown()
 }

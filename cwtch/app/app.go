@@ -32,6 +32,24 @@ type application struct {
 	engines  map[string]connections.Engine
 	appBus   event.Manager
 	appmutex sync.Mutex
+
+	duplicateProfiles map[string]*DuplicateProfile
+	duplicateMutex    sync.Mutex
+}
+
+// DuplicateProfile is safe metadata for two on-disk stores containing the
+// same identity. Paths and passwords deliberately remain private to app.
+type DuplicateProfile struct {
+	ID                    string `json:"id"`
+	Onion                 string `json:"onion"`
+	CurrentName           string `json:"currentName"`
+	DuplicateName         string `json:"duplicateName"`
+	CurrentModifiedUnix   int64  `json:"currentModifiedUnix"`
+	DuplicateModifiedUnix int64  `json:"duplicateModifiedUnix"`
+	CurrentBackedUp       bool   `json:"currentBackedUp"`
+	DuplicateBackedUp     bool   `json:"duplicateBackedUp"`
+	currentDirectory      string
+	duplicateDirectory    string
 }
 
 // Application is a full cwtch peer application. It allows management, usage and storage of multiple peers
@@ -42,6 +60,9 @@ type Application interface {
 	// Deprecated in 1.10
 	CreateTaggedPeer(name string, password string, tag string)
 	ImportProfile(exportedCwtchFile string, password string) (peer.CwtchPeer, error)
+	ListDuplicateProfiles() []DuplicateProfile
+	ExportDuplicateProfile(id string, side string, file string, currentPassword string, backupPassword string, blankPassword string) error
+	ResolveDuplicateProfile(id string, action string, currentPassword string, duplicatePassword string, blankPassword string) (*peer.ProfileMergeSummary, error)
 	PromoteEphemeralProfile(onion string, password string) error
 	DeletePeer(onion string, currentPassword string)
 	AddPeerPlugin(onion string, pluginID plugins.PluginID)
@@ -76,7 +97,7 @@ func NewApp(acn connectivity.ACN, appDirectory string) Application {
 	log.Debugf("NewApp(%v)\n", appDirectory)
 	os.MkdirAll(path.Join(appDirectory, "profiles"), 0700)
 
-	app := &application{engines: make(map[string]connections.Engine), eventBuses: make(map[string]event.Manager), directory: appDirectory, appBus: event.NewEventManager()}
+	app := &application{engines: make(map[string]connections.Engine), eventBuses: make(map[string]event.Manager), directory: appDirectory, appBus: event.NewEventManager(), duplicateProfiles: make(map[string]*DuplicateProfile)}
 	app.peers = make(map[string]peer.CwtchPeer)
 
 	app.acn = acn
@@ -289,8 +310,9 @@ func (app *application) ImportProfile(exportedCwtchFile string, password string)
 		profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileStorageAttribute, "disk")
 		profile.SetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, stegmsProfileSourceAttribute, "imported")
 		if !app.installProfile(profile) {
-			profile.Delete()
-			return nil, errors.New("identity already exists on this device")
+			conflict := app.registerDuplicateProfile(profile)
+			profile.ShutdownWithoutPurgingMessages()
+			return nil, fmt.Errorf("duplicate identity conflict:%s", conflict.ID)
 		}
 	}
 	return profile, err
@@ -365,6 +387,16 @@ func (app *application) LoadProfiles(password string) {
 			// return the load the profile...
 			log.Infof("loading profile from new-type storage database...")
 			loaded = app.installProfile(profile)
+			if !loaded {
+				// LoadProfiles can be called again after a profile is already
+				// active. Reopening that exact storage directory is not a
+				// duplicate and must not create a recovery conflict.
+				current := app.GetPeer(profile.GetOnion())
+				if current == nil || current.StorageDirectory() != profile.StorageDirectory() {
+					app.registerDuplicateProfile(profile)
+				}
+				profile.ShutdownWithoutPurgingMessages()
+			}
 		} else { // On failure attempt to load a legacy profile
 			profileStore, legacyErr := storage.LoadProfileWriterStore(profileDirectory, password)
 			if legacyErr != nil {
@@ -419,9 +451,238 @@ func (app *application) installProfile(profile peer.CwtchPeer) bool {
 		app.appBus.Publish(event.NewEvent(event.NewPeer, map[event.Field]string{event.Identity: profile.GetOnion(), event.Created: event.False}))
 		return true
 	}
-	// Otherwise shutdown the connections
-	profile.Shutdown()
 	return false
+}
+
+func profileDisplayName(profile peer.CwtchPeer) string {
+	if name, ok := profile.GetScopedZonedAttribute(attr.LocalScope, attr.ProfileZone, constants.Name); ok && name != "" {
+		return name
+	}
+	if name, ok := profile.GetScopedZonedAttribute(attr.PublicScope, attr.ProfileZone, constants.Name); ok && name != "" {
+		return name
+	}
+	return "Cwtch identity"
+}
+
+func profileModifiedUnix(directory string) int64 {
+	info, err := os.Stat(path.Join(directory, "db"))
+	if err != nil {
+		return 0
+	}
+	return info.ModTime().Unix()
+}
+
+func (app *application) ListDuplicateProfiles() []DuplicateProfile {
+	app.duplicateMutex.Lock()
+	defer app.duplicateMutex.Unlock()
+	app.appmutex.Lock()
+	defer app.appmutex.Unlock()
+	result := make([]DuplicateProfile, 0, len(app.duplicateProfiles))
+	for _, conflict := range app.duplicateProfiles {
+		copy := *conflict
+		copy.currentDirectory = ""
+		copy.duplicateDirectory = ""
+		result = append(result, copy)
+	}
+	return result
+}
+
+func (app *application) ExportDuplicateProfile(id string, side string, file string, currentPassword string, backupPassword string, blankPassword string) error {
+	app.duplicateMutex.Lock()
+	defer app.duplicateMutex.Unlock()
+	app.appmutex.Lock()
+	conflict := app.duplicateProfiles[id]
+	if conflict == nil {
+		app.appmutex.Unlock()
+		return errors.New("duplicate profile conflict not found")
+	}
+	onion := conflict.Onion
+	directory := conflict.duplicateDirectory
+	if side == "current" {
+		directory = conflict.currentDirectory
+	} else if side != "duplicate" {
+		app.appmutex.Unlock()
+		return errors.New("invalid duplicate profile side")
+	}
+	app.appmutex.Unlock()
+
+	var profile peer.CwtchPeer
+	var err error
+	if side == "current" {
+		profile = app.GetPeer(onion)
+		if profile == nil || profile.StorageDirectory() != directory {
+			return errors.New("current profile copy is no longer active")
+		}
+	} else {
+		profile, err = peer.FromEncryptedDatabase(directory, currentPassword)
+		if err != nil {
+			return errors.New(constants.InvalidPasswordError)
+		}
+		defer profile.ShutdownWithoutPurgingMessages()
+		if profile.GetOnion() != onion {
+			return errors.New("duplicate profile identity changed")
+		}
+	}
+	if err := profile.ExportWithPassword(file, currentPassword, backupPassword, blankPassword); err != nil {
+		return err
+	}
+	app.appmutex.Lock()
+	if current := app.duplicateProfiles[id]; current != nil {
+		if side == "current" {
+			current.CurrentBackedUp = true
+		} else {
+			current.DuplicateBackedUp = true
+		}
+	}
+	app.appmutex.Unlock()
+	return nil
+}
+
+func (app *application) ResolveDuplicateProfile(id string, action string, currentPassword string, duplicatePassword string, blankPassword string) (*peer.ProfileMergeSummary, error) {
+	app.duplicateMutex.Lock()
+	defer app.duplicateMutex.Unlock()
+	app.appmutex.Lock()
+	conflict := app.duplicateProfiles[id]
+	if conflict == nil {
+		app.appmutex.Unlock()
+		return nil, errors.New("duplicate profile conflict not found")
+	}
+	conflictCopy := *conflict
+	current := app.peers[conflict.Onion]
+	app.appmutex.Unlock()
+	if current == nil || current.StorageDirectory() != conflictCopy.currentDirectory {
+		return nil, errors.New("current profile copy is no longer active")
+	}
+	if !current.CheckPassword(currentPassword) {
+		return nil, errors.New(constants.InvalidPasswordError)
+	}
+	duplicate, err := peer.FromEncryptedDatabase(conflictCopy.duplicateDirectory, duplicatePassword)
+	if err != nil || duplicate.GetOnion() != conflictCopy.Onion {
+		if duplicate != nil {
+			duplicate.ShutdownWithoutPurgingMessages()
+		}
+		return nil, errors.New(constants.InvalidPasswordError)
+	}
+	if action == "keep_duplicate" {
+		removed, restoreErr := duplicate.RestorePasswordAsItWas(duplicatePassword, blankPassword)
+		if restoreErr != nil {
+			duplicate.ShutdownWithoutPurgingMessages()
+			return nil, restoreErr
+		}
+		if removed {
+			duplicatePassword = blankPassword
+		}
+	}
+	duplicate.ShutdownWithoutPurgingMessages()
+
+	switch action {
+	case "keep_current":
+		if err := os.RemoveAll(conflictCopy.duplicateDirectory); err != nil {
+			return nil, err
+		}
+		app.appmutex.Lock()
+		delete(app.duplicateProfiles, id)
+		app.appmutex.Unlock()
+		return &peer.ProfileMergeSummary{}, nil
+	case "keep_duplicate", "join":
+		if action == "join" && (!conflictCopy.CurrentBackedUp || !conflictCopy.DuplicateBackedUp) {
+			return nil, errors.New("both profile copies must be backed up before joining")
+		}
+	default:
+		return nil, errors.New("invalid duplicate profile action")
+	}
+
+	app.appmutex.Lock()
+	// A normal session shutdown applies the user's save-history policy and can
+	// purge messages. Recovery preserves the current store until the merge or
+	// replacement has reopened and validated, so rollback cannot lose history.
+	app.shutdownPeerWithoutPurgingMessages(conflictCopy.Onion)
+	app.appmutex.Unlock()
+	var replacement peer.CwtchPeer
+	var summary *peer.ProfileMergeSummary
+	if action == "join" {
+		replacement, summary, err = peer.MergeEncryptedProfileDirectories(
+			conflictCopy.currentDirectory, currentPassword,
+			conflictCopy.duplicateDirectory, duplicatePassword,
+		)
+	} else {
+		replacement, err = peer.FromEncryptedDatabase(conflictCopy.duplicateDirectory, duplicatePassword)
+		summary = &peer.ProfileMergeSummary{}
+	}
+	if err != nil {
+		if reopened, reopenErr := peer.FromEncryptedDatabase(conflictCopy.currentDirectory, currentPassword); reopenErr == nil {
+			app.installProfile(reopened)
+		}
+		return nil, err
+	}
+	if !app.installProfile(replacement) {
+		replacement.ShutdownWithoutPurgingMessages()
+		if reopened, reopenErr := peer.FromEncryptedDatabase(conflictCopy.currentDirectory, currentPassword); reopenErr == nil {
+			app.installProfile(reopened)
+		}
+		return nil, errors.New("could not activate resolved profile")
+	}
+	if action == "keep_duplicate" {
+		if err := os.RemoveAll(conflictCopy.currentDirectory); err != nil {
+			// The selected replacement is active and the old copy still exists.
+			// Reverse this conflict so a retry accurately describes both stores.
+			app.appmutex.Lock()
+			if conflict := app.duplicateProfiles[id]; conflict != nil {
+				conflict.currentDirectory, conflict.duplicateDirectory = conflictCopy.duplicateDirectory, conflictCopy.currentDirectory
+				conflict.CurrentName, conflict.DuplicateName = conflictCopy.DuplicateName, conflictCopy.CurrentName
+				conflict.CurrentModifiedUnix, conflict.DuplicateModifiedUnix = conflictCopy.DuplicateModifiedUnix, conflictCopy.CurrentModifiedUnix
+				conflict.CurrentBackedUp, conflict.DuplicateBackedUp = conflictCopy.DuplicateBackedUp, conflictCopy.CurrentBackedUp
+			}
+			app.appmutex.Unlock()
+			return nil, fmt.Errorf("other copy activated but old current copy could not be removed: %w", err)
+		}
+	}
+	app.appmutex.Lock()
+	delete(app.duplicateProfiles, id)
+	for _, conflict := range app.duplicateProfiles {
+		if conflict.Onion != conflictCopy.Onion {
+			continue
+		}
+		conflict.currentDirectory = replacement.StorageDirectory()
+		conflict.CurrentName = profileDisplayName(replacement)
+		conflict.CurrentModifiedUnix = profileModifiedUnix(conflict.currentDirectory)
+		if action == "join" {
+			// A backup of either input is not a backup of the newly merged store.
+			conflict.CurrentBackedUp = false
+		} else {
+			conflict.CurrentBackedUp = conflictCopy.DuplicateBackedUp
+		}
+	}
+	app.appmutex.Unlock()
+	return summary, nil
+}
+
+func (app *application) registerDuplicateProfile(duplicate peer.CwtchPeer) *DuplicateProfile {
+	app.duplicateMutex.Lock()
+	defer app.duplicateMutex.Unlock()
+	app.appmutex.Lock()
+	defer app.appmutex.Unlock()
+	onion := duplicate.GetOnion()
+	current := app.peers[onion]
+	currentDirectory := current.StorageDirectory()
+	duplicateDirectory := duplicate.StorageDirectory()
+	for _, conflict := range app.duplicateProfiles {
+		if conflict.Onion == onion && conflict.currentDirectory == currentDirectory && conflict.duplicateDirectory == duplicateDirectory {
+			return conflict
+		}
+	}
+	conflict := &DuplicateProfile{
+		ID:                    model.GenerateRandomID(),
+		Onion:                 onion,
+		CurrentName:           profileDisplayName(current),
+		DuplicateName:         profileDisplayName(duplicate),
+		CurrentModifiedUnix:   profileModifiedUnix(currentDirectory),
+		DuplicateModifiedUnix: profileModifiedUnix(duplicateDirectory),
+		currentDirectory:      currentDirectory,
+		duplicateDirectory:    duplicateDirectory,
+	}
+	app.duplicateProfiles[conflict.ID] = conflict
+	return conflict
 }
 
 // ActivateEngines launches all peer engines
@@ -526,10 +787,22 @@ func (app *application) ShutdownPeer(onion string) {
 
 // shutdownPeer mutex unlocked helper shutdown peer
 func (app *application) shutdownPeer(onion string) {
+	app.shutdownPeerStorage(onion, true)
+}
+
+func (app *application) shutdownPeerWithoutPurgingMessages(onion string) {
+	app.shutdownPeerStorage(onion, false)
+}
+
+func (app *application) shutdownPeerStorage(onion string, purgeMessages bool) {
 	app.eventBuses[onion].Publish(event.NewEventList(event.ShutdownPeer, event.Identity, onion))
 	app.eventBuses[onion].Shutdown()
 	delete(app.eventBuses, onion)
-	app.peers[onion].Shutdown()
+	if purgeMessages {
+		app.peers[onion].Shutdown()
+	} else {
+		app.peers[onion].ShutdownWithoutPurgingMessages()
+	}
 	delete(app.peers, onion)
 	if _, ok := app.engines[onion]; ok {
 		app.engines[onion].Shutdown()
